@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RiskBand {
+  High
+  Medium
+  Low
+}
+
+model Customer {
+  id              String       @id @default(uuid())
+  customerId      String       @unique
+  tenure          Int
+  contractType    String
+  monthlyCharges  Float
+  totalCharges    Float
+  internetService String
+  paymentMethod   String
+  actualChurn     Boolean
+  scores          ChurnScore[]
+}
+
+model ChurnScore {
+  id            String   @id @default(uuid())
+  customerId    String
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  score         Float
+  riskBand      RiskBand
+  reason        String
+  revenueAtRisk Float
+  scoredAt      DateTime @default(now())
+}
+
+model Segment {
+  id          String @id @default(uuid())
+  name        String
+  description String
+}

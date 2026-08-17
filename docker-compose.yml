@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: churn-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: churn_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - churn-network
+
+  model-service:
+    build:
+      context: ./apps/model-service
+      dockerfile: Dockerfile
+    container_name: churn-model-service
+    ports:
+      - "8000:8000"
+    environment:
+      - S3_BUCKET_NAME=dev-churn-bucket
+      - AWS_REGION=us-east-1
+    networks:
+      - churn-network
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: churn-api
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/churn_db?schema=public
+      - MODEL_SERVICE_URL=http://model-service:8000
+    depends_on:
+      - postgres
+      - model-service
+    networks:
+      - churn-network
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: churn-web
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:4000
+    depends_on:
+      - api
+    networks:
+      - churn-network
+
+networks:
+  churn-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
