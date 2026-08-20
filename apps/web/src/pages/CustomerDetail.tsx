@@ -121,19 +121,6 @@ export const CustomerDetail: React.FC = () => {
               </p>
             </div>
           </div>
-          <div className="flex gap-3">
-            <button
-              onClick={handleScoreCustomer}
-              disabled={scoring}
-              className="inline-flex items-center gap-2 rounded-full border border-[#c6c2d4] bg-white px-6 py-2.5 text-xs font-bold text-[#34334a] hover:bg-slate-50 transition"
-            >
-              <Sparkles size={14} className={scoring ? "animate-spin" : "text-[#6622df]"} />
-              {scoring ? "Scoring..." : "Run ML Scoring"}
-            </button>
-            <Link to="/retention" className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#6622df] to-[#7c22de] px-6 py-2.5 text-xs font-bold text-white shadow-sm">
-              Initiate Playbook <ArrowRight size={14} />
-            </Link>
-          </div>
         </header>
 
         <div className="mt-10 grid gap-7 xl:grid-cols-[minmax(0,1fr)_360px]">
