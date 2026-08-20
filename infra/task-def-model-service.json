@@ -6,11 +6,11 @@
   ],
   "cpu": "512",
   "memory": "1024",
-  "executionRoleArn": "<EXECUTION_ROLE_ARN>",
+  "executionRoleArn": "arn:aws:iam::195616721931:role/ecsTaskExecutionRole",
   "containerDefinitions": [
     {
       "name": "churn-model-service",
-      "image": "<ECR_URI>:<TAG>",
+      "image": "195616721931.dkr.ecr.ap-south-2.amazonaws.com/churn-model-service:latest",
       "essential": true,
       "portMappings": [
         {
@@ -26,14 +26,14 @@
         },
         {
           "name": "S3_BUCKET_NAME",
-          "value": "<S3_BUCKET_NAME>"
+          "value": "churn-platform-athul-hackathon"
         }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
           "awslogs-group": "/ecs/churn-model-service",
-          "awslogs-region": "<AWS_REGION>",
+          "awslogs-region": "ap-south-2",
           "awslogs-stream-prefix": "ecs"
         }
       }

@@ -6,11 +6,11 @@
   ],
   "cpu": "256",
   "memory": "512",
-  "executionRoleArn": "<EXECUTION_ROLE_ARN>",
+  "executionRoleArn": "arn:aws:iam::195616721931:role/ecsTaskExecutionRole",
   "containerDefinitions": [
     {
       "name": "churn-web",
-      "image": "<ECR_URI>:<TAG>",
+      "image": "195616721931.dkr.ecr.ap-south-2.amazonaws.com/churn-web:latest",
       "essential": true,
       "portMappings": [
         {
@@ -22,14 +22,14 @@
       "environment": [
         {
           "name": "VITE_API_URL",
-          "value": "<MODEL_SERVICE_URL>"
+          "value": "http://16.113.50.9:3000"
         }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
           "awslogs-group": "/ecs/churn-web",
-          "awslogs-region": "<AWS_REGION>",
+          "awslogs-region": "ap-south-2",
           "awslogs-stream-prefix": "ecs"
         }
       }

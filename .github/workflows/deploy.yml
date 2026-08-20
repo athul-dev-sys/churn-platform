@@ -35,17 +35,17 @@ jobs:
             path: apps/web
             ecr_repo: churn-web
             task_def_file: infra/task-def-web.json
-            ecs_service: churn-web-service
+            ecs_service: churn-web
           - service: api
             path: apps/api
             ecr_repo: churn-api
             task_def_file: infra/task-def-api.json
-            ecs_service: churn-api-service
+            ecs_service: churn-api
           - service: model-service
             path: apps/model-service
             ecr_repo: churn-model-service
             task_def_file: infra/task-def-model-service.json
-            ecs_service: churn-model-service-service
+            ecs_service: churn-model-service
 
     steps:
       - name: Checkout Repository
