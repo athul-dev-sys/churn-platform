@@ -1,0 +1,125 @@
+# ==============================================================================
+# REQUIRED GITHUB REPOSITORY SECRETS
+# Configure these in: GitHub Repository -> Settings -> Secrets and variables -> Actions
+# ------------------------------------------------------------------------------
+# 1. AWS_ACCESS_KEY_ID       - IAM User Access Key ID with ECR & ECS permissions
+# 2. AWS_SECRET_ACCESS_KEY   - IAM User Secret Access Key
+# 3. AWS_REGION              - Target AWS Region (e.g. us-east-1)
+# 4. EXECUTION_ROLE_ARN      - IAM Execution Role ARN (e.g. arn:aws:iam::123456789012:role/ecsTaskExecutionRole)
+# 5. DATABASE_URL            - Neon PostgreSQL connection URI
+# 6. MODEL_SERVICE_URL       - Endpoint URL for FastAPI model service (e.g. http://churn-model-service.local:8000)
+# 7. S3_BUCKET_NAME          - AWS S3 bucket name storing model artifacts
+#
+# ASSUMED ECS SERVICES IN CLUSTER 'churn-platform-cluster':
+# - churn-web-service
+# - churn-api-service
+# - churn-model-service-service
+# ==============================================================================
+
+name: Deploy Churn Platform to AWS ECS Fargate
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Build & Deploy Service
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: web
+            path: apps/web
+            ecr_repo: churn-web
+            task_def_file: infra/task-def-web.json
+            ecs_service: churn-web-service
+          - service: api
+            path: apps/api
+            ecr_repo: churn-api
+            task_def_file: infra/task-def-api.json
+            ecs_service: churn-api-service
+          - service: model-service
+            path: apps/model-service
+            ecr_repo: churn-model-service
+            task_def_file: infra/task-def-model-service.json
+            ecs_service: churn-model-service-service
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Docker Image to ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ matrix.ecr_repo }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          IMAGE_URI_LATEST="$ECR_REGISTRY/$ECR_REPOSITORY:latest"
+
+          echo "Building Docker image for ${{ matrix.service }}..."
+          docker build -t "$IMAGE_URI" -t "$IMAGE_URI_LATEST" "${{ matrix.path }}"
+
+          echo "Pushing images to ECR..."
+          docker push "$IMAGE_URI"
+          docker push "$IMAGE_URI_LATEST"
+
+          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+      - name: Render Task Definition JSON
+        id: render-task-def
+        env:
+          IMAGE_URI: ${{ steps.build-image.outputs.image_uri }}
+          EXECUTION_ROLE_ARN: ${{ secrets.EXECUTION_ROLE_ARN }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODEL_SERVICE_URL: ${{ secrets.MODEL_SERVICE_URL }}
+          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+        run: |
+          TASK_DEF_PATH="${{ matrix.task_def_file }}"
+          OUTPUT_PATH="infra/rendered-${{ matrix.service }}.json"
+
+          sed \
+            -e "s|<ECR_URI>:<TAG>|$IMAGE_URI|g" \
+            -e "s|<EXECUTION_ROLE_ARN>|$EXECUTION_ROLE_ARN|g" \
+            -e "s|<AWS_REGION>|$AWS_REGION|g" \
+            -e "s|<DATABASE_URL>|$DATABASE_URL|g" \
+            -e "s|<MODEL_SERVICE_URL>|$MODEL_SERVICE_URL|g" \
+            -e "s|<S3_BUCKET_NAME>|$S3_BUCKET_NAME|g" \
+            "$TASK_DEF_PATH" > "$OUTPUT_PATH"
+
+          echo "rendered_task_def=$OUTPUT_PATH" >> $GITHUB_OUTPUT
+
+      - name: Register ECS Task Definition Revision
+        id: register-task-def
+        run: |
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "file://${{ steps.render-task-def.outputs.rendered_task_def }}" \
+            --query "taskDefinition.taskDefinitionArn" \
+            --output text)
+
+          echo "Registered revision: $NEW_TASK_DEF_ARN"
+          echo "task_def_arn=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
+
+      - name: Update ECS Service (Force New Deployment)
+        run: |
+          aws ecs update-service \
+            --cluster churn-platform-cluster \
+            --service ${{ matrix.ecs_service }} \
+            --task-definition ${{ steps.register-task-def.outputs.task_def_arn }} \
+            --force-new-deployment
