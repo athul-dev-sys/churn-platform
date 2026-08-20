@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { RiskBand } from '@prisma/client';
 import { prisma } from '../lib/prisma';
-import { parseRiskBand, getRiskReason } from '../utils/riskBand';
+import { parseRiskBand, getRiskReason, calculateDynamicChurnScore } from '../utils/riskBand';
 import { ModelServiceRequest, ModelServiceResponse } from '../types/modelService';
 
 /**
@@ -261,9 +261,9 @@ export async function scoreBatch(req: Request, res: Response): Promise<Response>
               const pred = predictions[j];
               const score = pred.churn_probability;
               const parsed = parseRiskBand(pred.risk_band);
-              const riskBand = parsed || RiskBand.Medium;
+              const riskBand = parsed || (score >= 0.6 ? RiskBand.High : score >= 0.3 ? RiskBand.Medium : RiskBand.Low);
               const revenueAtRisk = c.totalCharges > 0 ? c.totalCharges : parseFloat((c.monthlyCharges * 12).toFixed(2));
-              const reason = getRiskReason(riskBand, c.tenure, c.contractType, c.monthlyCharges);
+              const reason = getRiskReason(riskBand, c.tenure, c.contractType, c.monthlyCharges, c.internetService);
 
               scoresToInsert.push({
                 customerId: c.id,
@@ -283,28 +283,22 @@ export async function scoreBatch(req: Request, res: Response): Promise<Response>
       }
 
       for (const c of chunk) {
-        let score: number;
-        let riskBand: RiskBand;
-
-        if (c.contractType.toLowerCase().includes('month') && c.monthlyCharges > 75) {
-          score = 0.78;
-          riskBand = RiskBand.High;
-        } else if (c.contractType.toLowerCase().includes('month')) {
-          score = 0.45;
-          riskBand = RiskBand.Medium;
-        } else {
-          score = 0.15;
-          riskBand = RiskBand.Low;
-        }
+        const dynamicResult = calculateDynamicChurnScore({
+          customerId: c.customerId,
+          tenure: c.tenure,
+          contractType: c.contractType,
+          monthlyCharges: c.monthlyCharges,
+          internetService: c.internetService,
+          paymentMethod: c.paymentMethod,
+        });
 
         const revenueAtRisk = c.totalCharges > 0 ? c.totalCharges : parseFloat((c.monthlyCharges * 12).toFixed(2));
-        const reason = getRiskReason(riskBand, c.tenure, c.contractType, c.monthlyCharges);
 
         scoresToInsert.push({
           customerId: c.id,
-          score,
-          riskBand,
-          reason,
+          score: dynamicResult.score,
+          riskBand: dynamicResult.riskBand,
+          reason: dynamicResult.reason,
           revenueAtRisk,
         });
       }
