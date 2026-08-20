@@ -4,16 +4,26 @@
 # ------------------------------------------------------------------------------
 # 1. AWS_ACCESS_KEY_ID       - IAM User Access Key ID with ECR & ECS permissions
 # 2. AWS_SECRET_ACCESS_KEY   - IAM User Secret Access Key
-# 3. AWS_REGION              - Target AWS Region (e.g. us-east-1)
+# 3. AWS_REGION              - Target AWS Region (e.g. ap-south-2)
 # 4. EXECUTION_ROLE_ARN      - IAM Execution Role ARN (e.g. arn:aws:iam::123456789012:role/ecsTaskExecutionRole)
 # 5. DATABASE_URL            - Neon PostgreSQL connection URI
-# 6. MODEL_SERVICE_URL       - Endpoint URL for FastAPI model service (e.g. http://churn-model-service.local:8000)
-# 7. S3_BUCKET_NAME          - AWS S3 bucket name storing model artifacts
+# 6. MODEL_SERVICE_URL       - Stable ALB URL (e.g. http://churn-platform-alb-xxxx.ap-south-2.elb.amazonaws.com)
+# 7. FRONTEND_URL            - Same ALB URL (optional; used for CORS)
+# 8. S3_BUCKET_NAME          - AWS S3 bucket name storing model artifacts
+#
+# ONE-TIME (before first ALB-backed deploy):
+#   .\infra\setup-alb.ps1     # or: bash infra/setup-alb.sh
+#   Then set MODEL_SERVICE_URL + FRONTEND_URL secrets to the printed ALB URL.
 #
 # ASSUMED ECS SERVICES IN CLUSTER 'churn-platform-cluster':
-# - churn-web-service
-# - churn-api-service
-# - churn-model-service-service
+# - churn-web
+# - churn-api
+# - churn-model-service
+#
+# ALB path routing (provisioned by infra/setup-alb.*):
+# - /*          -> churn-web  :80
+# - /api/*      -> churn-api  :3000
+# - /predict*   -> churn-model-service :8000
 # ==============================================================================
 
 name: Deploy Churn Platform to AWS ECS Fargate
@@ -22,6 +32,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -36,16 +47,19 @@ jobs:
             ecr_repo: churn-web
             task_def_file: infra/task-def-web.json
             ecs_service: churn-web
+            container_name: churn-web
           - service: api
             path: apps/api
             ecr_repo: churn-api
             task_def_file: infra/task-def-api.json
             ecs_service: churn-api
+            container_name: churn-api
           - service: model-service
             path: apps/model-service
             ecr_repo: churn-model-service
             task_def_file: infra/task-def-model-service.json
             ecs_service: churn-model-service
+            container_name: churn-model-service
 
     steps:
       - name: Checkout Repository
@@ -73,7 +87,15 @@ jobs:
           IMAGE_URI_LATEST="$ECR_REGISTRY/$ECR_REPOSITORY:latest"
 
           echo "Building Docker image for ${{ matrix.service }}..."
-          docker build -t "$IMAGE_URI" -t "$IMAGE_URI_LATEST" "${{ matrix.path }}"
+          if [ "${{ matrix.service }}" = "web" ]; then
+            # Empty VITE_API_URL => relative /api paths (ALB path-based routing)
+            docker build \
+              --build-arg VITE_API_URL= \
+              -t "$IMAGE_URI" -t "$IMAGE_URI_LATEST" \
+              "${{ matrix.path }}"
+          else
+            docker build -t "$IMAGE_URI" -t "$IMAGE_URI_LATEST" "${{ matrix.path }}"
+          fi
 
           echo "Pushing images to ECR..."
           docker push "$IMAGE_URI"
@@ -89,18 +111,36 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           MODEL_SERVICE_URL: ${{ secrets.MODEL_SERVICE_URL }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
           S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
         run: |
           TASK_DEF_PATH="${{ matrix.task_def_file }}"
           OUTPUT_PATH="infra/rendered-${{ matrix.service }}.json"
 
+          # FRONTEND_URL defaults to MODEL_SERVICE_URL (both are the ALB URL)
+          if [ -z "$FRONTEND_URL" ]; then
+            FRONTEND_URL="$MODEL_SERVICE_URL"
+          fi
+
+          # Escape sed replacement specials in secret values
+          escape_sed() { printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'; }
+
+          IMAGE_ESC=$(escape_sed "$IMAGE_URI")
+          EXEC_ESC=$(escape_sed "$EXECUTION_ROLE_ARN")
+          REGION_ESC=$(escape_sed "$AWS_REGION")
+          DB_ESC=$(escape_sed "$DATABASE_URL")
+          MODEL_ESC=$(escape_sed "$MODEL_SERVICE_URL")
+          FE_ESC=$(escape_sed "$FRONTEND_URL")
+          S3_ESC=$(escape_sed "$S3_BUCKET_NAME")
+
           sed \
-            -e "s|<ECR_URI>:<TAG>|$IMAGE_URI|g" \
-            -e "s|<EXECUTION_ROLE_ARN>|$EXECUTION_ROLE_ARN|g" \
-            -e "s|<AWS_REGION>|$AWS_REGION|g" \
-            -e "s|<DATABASE_URL>|$DATABASE_URL|g" \
-            -e "s|<MODEL_SERVICE_URL>|$MODEL_SERVICE_URL|g" \
-            -e "s|<S3_BUCKET_NAME>|$S3_BUCKET_NAME|g" \
+            -e "s|<ECR_URI>:<TAG>|$IMAGE_ESC|g" \
+            -e "s|<EXECUTION_ROLE_ARN>|$EXEC_ESC|g" \
+            -e "s|<AWS_REGION>|$REGION_ESC|g" \
+            -e "s|<DATABASE_URL>|$DB_ESC|g" \
+            -e "s|<MODEL_SERVICE_URL>|$MODEL_ESC|g" \
+            -e "s|<FRONTEND_URL>|$FE_ESC|g" \
+            -e "s|<S3_BUCKET_NAME>|$S3_ESC|g" \
             "$TASK_DEF_PATH" > "$OUTPUT_PATH"
 
           echo "rendered_task_def=$OUTPUT_PATH" >> $GITHUB_OUTPUT
@@ -116,10 +156,46 @@ jobs:
           echo "Registered revision: $NEW_TASK_DEF_ARN"
           echo "task_def_arn=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
 
-      - name: Update ECS Service (Force New Deployment)
+      - name: Update ECS Service (preserve ALB target group bindings)
         run: |
+          # IMPORTANT: Do NOT pass --load-balancers here.
+          # Omitting it keeps existing target-group associations from setup-alb.
           aws ecs update-service \
             --cluster churn-platform-cluster \
             --service ${{ matrix.ecs_service }} \
             --task-definition ${{ steps.register-task-def.outputs.task_def_arn }} \
-            --force-new-deployment
+            --force-new-deployment \
+            --health-check-grace-period-seconds 120
+
+  print-alb-url:
+    name: Print permanent ALB URL
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Resolve ALB DNS
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names churn-platform-alb \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text 2>/dev/null || true)
+
+          if [ -z "$ALB_DNS" ] || [ "$ALB_DNS" = "None" ]; then
+            echo "::warning::ALB 'churn-platform-alb' not found. Run infra/setup-alb.ps1 (or setup-alb.sh) once."
+            exit 0
+          fi
+
+          echo "============================================================"
+          echo " PERMANENT PLATFORM URL:"
+          echo " http://$ALB_DNS"
+          echo "============================================================"
+          echo "ALB_URL=http://$ALB_DNS" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Permanent platform URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "http://$ALB_DNS" >> "$GITHUB_STEP_SUMMARY"

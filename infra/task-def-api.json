@@ -6,11 +6,11 @@
   ],
   "cpu": "512",
   "memory": "1024",
-  "executionRoleArn": "arn:aws:iam::195616721931:role/ecsTaskExecutionRole",
+  "executionRoleArn": "<EXECUTION_ROLE_ARN>",
   "containerDefinitions": [
     {
       "name": "churn-api",
-      "image": "195616721931.dkr.ecr.ap-south-2.amazonaws.com/churn-api:latest",
+      "image": "<ECR_URI>:<TAG>",
       "essential": true,
       "portMappings": [
         {
@@ -25,19 +25,31 @@
           "value": "3000"
         },
         {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
           "name": "DATABASE_URL",
-          "value": "postgresql://neondb_owner:npg_zPXZH6BE7yUD@ep-lingering-band-axdroi2g-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require"
+          "value": "<DATABASE_URL>"
         },
         {
           "name": "MODEL_SERVICE_URL",
-          "value": "http://172.31.14.74:8000"
+          "value": "<MODEL_SERVICE_URL>"
+        },
+        {
+          "name": "FRONTEND_URL",
+          "value": "<FRONTEND_URL>"
+        },
+        {
+          "name": "CORS_ALLOW_ALL",
+          "value": "true"
         }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
           "awslogs-group": "/ecs/churn-api",
-          "awslogs-region": "ap-south-2",
+          "awslogs-region": "<AWS_REGION>",
           "awslogs-stream-prefix": "ecs"
         }
       }

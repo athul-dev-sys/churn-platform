@@ -10,3 +10,5 @@ build
 *.log
 coverage
 .prisma
+infra/alb-outputs.env
+infra/rendered-*.json

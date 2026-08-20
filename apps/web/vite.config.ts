@@ -6,5 +6,12 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    // Local same-origin /api when VITE_API_URL is unset
+    proxy: {
+      '/api': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
+    },
   },
 });

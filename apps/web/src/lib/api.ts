@@ -1,4 +1,17 @@
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const BASE_URL =
+  import.meta.env.VITE_API_URL !== undefined && import.meta.env.VITE_API_URL !== ''
+    ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
+    : '';
+
+/**
+ * Same-origin relative API base (recommended behind ALB path routing).
+ * - Production: BASE_URL=""  => fetch("/api/...") hits the ALB, which routes /api/* to churn-api
+ * - Local: set VITE_API_URL=http://localhost:4000 in apps/web/.env OR use the Vite /api proxy
+ */
+function apiUrl(path: string): string {
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return `${BASE_URL}${p}`;
+}
 
 export interface Customer {
   id: string;
@@ -73,7 +86,7 @@ export async function fetchCustomers(
   if (limit) params.append('limit', limit.toString());
 
   const query = params.toString();
-  const url = `${BASE_URL}/api/customers${query ? `?${query}` : ''}`;
+  const url = apiUrl(`/api/customers${query ? `?${query}` : ''}`);
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`Failed to fetch customers: ${res.statusText}`);
@@ -92,7 +105,7 @@ export async function fetchCustomers(
 }
 
 export async function fetchCustomerById(id: string): Promise<Customer> {
-  const res = await fetch(`${BASE_URL}/api/customers/${encodeURIComponent(id)}`);
+  const res = await fetch(apiUrl(`/api/customers/${encodeURIComponent(id)}`));
   if (!res.ok) {
     throw new Error(`Failed to fetch customer '${id}': ${res.statusText}`);
   }
@@ -100,7 +113,7 @@ export async function fetchCustomerById(id: string): Promise<Customer> {
 }
 
 export async function fetchSummary(): Promise<SummaryStats> {
-  const res = await fetch(`${BASE_URL}/api/summary`);
+  const res = await fetch(apiUrl('/api/summary'));
   if (!res.ok) {
     throw new Error(`Failed to fetch summary: ${res.statusText}`);
   }
@@ -108,7 +121,7 @@ export async function fetchSummary(): Promise<SummaryStats> {
 }
 
 export async function scoreBatch(customerIds: string[]): Promise<{ processed: number; scores: ChurnScore[] }> {
-  const res = await fetch(`${BASE_URL}/api/score-batch`, {
+  const res = await fetch(apiUrl('/api/score-batch'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ customerIds }),

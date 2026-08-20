@@ -8,7 +8,8 @@ RUN npm ci
 
 COPY . .
 
-ARG VITE_API_URL=http://16.112.70.132:3000
+# Empty = same-origin relative /api calls (ALB path routing). Override only for local/dev builds.
+ARG VITE_API_URL=
 ENV VITE_API_URL=${VITE_API_URL}
 
 RUN npm run build
