@@ -57,8 +57,10 @@ export const RetentionActions: React.FC = () => {
     }
   };
 
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
   const isAllCurrentSelected =
-    currentAtRisk.length > 0 && currentAtRisk.every((c) => selectedIds.includes(c.customerId));
+    currentAtRisk.length > 0 && currentAtRisk.every((c) => selectedSet.has(c.customerId));
 
   const toggle = (id: string) =>
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -214,7 +216,7 @@ export const RetentionActions: React.FC = () => {
                   {currentAtRisk.map((c) => {
                     const score = c.scores?.[0];
                     const band = score?.riskBand || 'Medium';
-                    const checked = selectedIds.includes(c.customerId);
+                    const checked = selectedSet.has(c.customerId);
                     return (
                       <tr key={c.id} className="hover:bg-emerald-50/30">
                         <td className="px-4 py-3">
