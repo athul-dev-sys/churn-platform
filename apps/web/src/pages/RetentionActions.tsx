@@ -184,13 +184,6 @@ export const RetentionActions: React.FC = () => {
               <span className="text-xs text-slate-600">
                 Selected customers: <b>{selectedIds.length}</b>
               </span>
-              <button
-                onClick={() => void runBatch()}
-                disabled={!selectedIds.length || batchLoading}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#6824df] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#571bc2] disabled:cursor-not-allowed disabled:bg-slate-300"
-              >
-                <Play size={14} fill="currentColor" /> Execute batch prediction
-              </button>
             </div>
 
             <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200/60">

@@ -7,7 +7,7 @@ const links = [
   { to: "/risk", label: "Risk Monitoring", icon: ShieldAlert },
   { to: "/customers", label: "Customer Health", icon: HeartPulse },
   { to: "/revenue", label: "Revenue", icon: FileText },
-  { to: "/retention", label: "System Logs", icon: BarChart3 },
+  { to: "/retention", label: "Retention action", icon: BarChart3 },
 ];
 
 export const AppLayout: React.FC = () => (
