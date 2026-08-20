@@ -1,68 +1,13 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState } from "react";
+import { AlertCircle, ArrowRight, DollarSign, ShieldAlert, Users } from "lucide-react";
+import { Link } from "react-router-dom";
+import { fetchCustomers, fetchSummary, Customer, SummaryStats } from "../lib/api";
 
+const Card = ({ label, value, detail, icon }: { label: string; value: string; detail: string; icon: React.ReactNode }) => <article className="relative overflow-hidden rounded-2xl border border-white bg-[#fffdfa] p-7 shadow-sm"><span className="absolute right-6 top-6 text-[#e6e2e3]">{icon}</span><p className="text-xs font-bold uppercase tracking-[.13em] text-[#353349]">{label}</p><p className="mt-3 text-4xl font-bold tracking-tight">{value}</p><p className="mt-3 text-sm text-[#666274]">{detail}</p></article>;
 export const Dashboard: React.FC = () => {
-  return (
-    <div className="p-8 space-y-6">
-      <header className="flex justify-between items-center pb-4 border-b border-slate-800">
-        <div>
-          <h1 className="text-3xl font-bold text-sky-400">Churn Analytics Dashboard</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Overview of customer retention, risk score distribution, and revenue at risk.
-          </p>
-        </div>
-      </header>
-
-      {/* KPI Cards Placeholder */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-slate-800/80 border border-slate-700 p-5 rounded-xl">
-          <p className="text-xs uppercase tracking-wider text-slate-400">Total Customers</p>
-          <p className="text-2xl font-bold text-white mt-1">1,250</p>
-        </div>
-        <div className="bg-slate-800/80 border border-slate-700 p-5 rounded-xl">
-          <p className="text-xs uppercase tracking-wider text-red-400">High Risk Customers</p>
-          <p className="text-2xl font-bold text-red-400 mt-1">180</p>
-        </div>
-        <div className="bg-slate-800/80 border border-slate-700 p-5 rounded-xl">
-          <p className="text-xs uppercase tracking-wider text-amber-400">Medium Risk</p>
-          <p className="text-2xl font-bold text-amber-400 mt-1">320</p>
-        </div>
-        <div className="bg-slate-800/80 border border-slate-700 p-5 rounded-xl">
-          <p className="text-xs uppercase tracking-wider text-emerald-400">Low Risk</p>
-          <p className="text-2xl font-bold text-emerald-400 mt-1">750</p>
-        </div>
-      </div>
-
-      {/* Table Placeholder */}
-      <div className="bg-slate-800/60 border border-slate-700/80 rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-slate-200 mb-4">Sample At-Risk Accounts</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="bg-slate-900/60 text-slate-400 uppercase text-xs">
-              <tr>
-                <th className="py-3 px-4">Customer ID</th>
-                <th className="py-3 px-4">Tenure</th>
-                <th className="py-3 px-4">Contract</th>
-                <th className="py-3 px-4">Monthly Charges</th>
-                <th className="py-3 px-4">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              <tr>
-                <td className="py-3 px-4 font-mono">CUST-9821</td>
-                <td className="py-3 px-4">24 mos</td>
-                <td className="py-3 px-4">Month-to-month</td>
-                <td className="py-3 px-4">$85.50</td>
-                <td className="py-3 px-4">
-                  <Link to="/customer/CUST-9821" className="text-sky-400 hover:underline">
-                    View Detail &rarr;
-                  </Link>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
+  const [summary, setSummary] = useState<SummaryStats | null>(null); const [customers, setCustomers] = useState<Customer[]>([]); const [error, setError] = useState(false);
+  useEffect(() => { Promise.all([fetchSummary(), fetchCustomers()]).then(([s,c]) => { setSummary(s); setCustomers(c); }).catch(() => setError(true)); }, []);
+  const high = customers.filter(c => c.scores?.[0]?.riskBand === "High").slice(0, 5);
+  return <div className="min-h-screen bg-[radial-gradient(circle_at_47%_20%,#fffdf9_0,#f6eedc_58%,#f2e4ca_100%)] p-6 sm:p-10"><div className="mx-auto max-w-[1200px]"><header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between"><div><p className="text-sm font-bold uppercase tracking-[.15em] text-[#6a27df]">Customer Intelligence</p><h1 className="mt-2 text-4xl font-bold tracking-tight">Portfolio Overview</h1><p className="mt-2 text-lg text-[#555164]">Monitor churn signals and focus retention work where it matters most.</p></div><Link to="/retention" className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#6622df] to-[#7c22de] px-7 py-3 text-sm font-bold text-white">Open Action Center <ArrowRight size={16}/></Link></header>{error ? <div className="mt-8 rounded-2xl bg-white p-8 text-center text-[#d6194d]">Unable to load live portfolio data.</div> : <><section className="mt-10 grid gap-6 sm:grid-cols-2 xl:grid-cols-4"><Card label="Total Customers" value={summary?.totalCustomers.toLocaleString() ?? "—"} detail="Active accounts in portfolio" icon={<Users size={55}/>} /><Card label="High Risk" value={summary?.highRiskCount.toLocaleString() ?? "—"} detail="Requires immediate attention" icon={<ShieldAlert size={55}/>} /><Card label="Revenue at Risk" value={summary ? `$${Math.round(summary.totalRevenueAtRisk).toLocaleString()}` : "—"} detail="Estimated current exposure" icon={<DollarSign size={55}/>} /><Card label="Average Churn Score" value={summary ? `${(summary.averageChurnScore * 100).toFixed(0)}%` : "—"} detail="Across the active portfolio" icon={<AlertCircle size={55}/>} /></section><section className="mt-7 grid gap-7 lg:grid-cols-[1.35fr_.65fr]"><article className="rounded-2xl border border-white bg-[#fffdfa] p-7 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="text-2xl font-bold">Priority Accounts</h2><p className="mt-1 text-[#605d6d]">Customers with the highest current churn risk.</p></div><Link className="text-sm font-bold text-[#6824df]" to="/customers">View all</Link></div><div className="mt-6 divide-y divide-[#eee8df]">{high.map(c => <Link to={`/customer/${c.customerId}`} key={c.id} className="flex items-center justify-between py-4 transition hover:bg-[#faf6f0]"><div><p className="font-bold">{c.customerId}</p><p className="mt-1 text-sm text-[#666274]">{c.contractType} · ${c.monthlyCharges.toFixed(2)}/mo</p></div><div className="text-right"><p className="font-bold text-[#e01950]">{((c.scores?.[0]?.score ?? 0) * 100).toFixed(0)}%</p><p className="text-xs font-bold uppercase text-[#e01950]">High risk</p></div></Link>)}{!high.length && <p className="py-8 text-center text-[#666274]">Loading priority accounts…</p>}</div></article><article className="rounded-2xl border border-white bg-gradient-to-br from-[#fffafa] to-[#f8eaff] p-7 shadow-sm"><p className="text-sm font-bold uppercase tracking-[.12em] text-[#6824df]">Aura AI</p><h2 className="mt-3 text-2xl font-bold">Retention focus</h2><p className="mt-3 leading-7 text-[#575364]">Start with high-risk accounts nearing renewal, then coordinate an executive outreach and product-adoption plan.</p><Link to="/risk" className="mt-8 inline-flex items-center gap-2 font-bold text-[#6824df]">Explore risk signals <ArrowRight size={17}/></Link></article></section></>}</div></div>;
 };
+export default Dashboard;

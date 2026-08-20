@@ -1,0 +1,7 @@
+import React from "react";
+import { Bell, Hexagon, Settings } from "lucide-react";
+import { NavLink } from "react-router-dom";
+
+export const Header: React.FC = () => <header className="sticky top-0 z-30 flex h-[100px] items-center border-b border-[#e9e2d8] bg-[#fffdfb]/95 px-8 backdrop-blur"><div className="flex items-center gap-3"><Hexagon size={27} className="text-[#6421e8]" strokeWidth={2.2} /><span className="text-[31px] font-bold tracking-tight text-[#15131d]">ChurnGuard AI</span></div><nav className="ml-16 hidden h-full items-center gap-11 md:flex"><NavLink to="/" end className="text-xl text-[#28263d]">Dashboard</NavLink><NavLink to="/risk" className="text-xl text-[#28263d]">Analytics</NavLink><NavLink to="/customers" className={({ isActive }) => `flex h-full items-center border-b-[3px] px-1 text-xl font-bold ${isActive ? "border-[#6421e8] text-[#15131d]" : "border-transparent text-[#28263d]"}`}>Customer Health</NavLink><NavLink to="/retention" className="text-xl text-[#28263d]">Strategy</NavLink></nav><div className="ml-auto flex items-center gap-7 text-[#33344c]"><button aria-label="Notifications"><Bell size={25} strokeWidth={1.8} /></button><button aria-label="Settings"><Settings size={26} strokeWidth={1.9} /></button><div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#e9d9ca] to-[#333750] text-sm font-bold text-white ring-2 ring-white">CA</div></div></header>;
+
+export default Header;

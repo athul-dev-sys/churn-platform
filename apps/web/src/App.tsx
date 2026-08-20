@@ -1,18 +1,77 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Dashboard } from './pages/Dashboard';
-import { CustomerDetail } from './pages/CustomerDetail';
+import React from "react";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+} from "react-router-dom";
+
+import { AppLayout } from "./components/AppLayout";
+
+import { Dashboard } from "./pages/Dashboard";
+import { Customers } from "./pages/Customers";
+import { CustomerDetail } from "./pages/CustomerDetail";
+import { RiskAnalytics } from "./pages/RiskAnalytics";
+import { RevenueRisk } from "./pages/RevenueRisk";
+import { RetentionActions } from "./pages/RetentionActions";
 
 export const App: React.FC = () => {
   return (
-    <Router>
-      <div className="min-h-screen bg-slate-950 text-slate-100">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/customer/:id" element={<CustomerDetail />} />
-        </Routes>
-      </div>
-    </Router>
+    <BrowserRouter>
+      <Routes>
+
+        {/* All pages use the same AppLayout */}
+        <Route element={<AppLayout />}>
+
+          {/* Dashboard */}
+          <Route
+            path="/"
+            element={<Dashboard />}
+          />
+
+          {/* Customers */}
+          <Route
+            path="/customers"
+            element={<Customers />}
+          />
+
+          {/* Customer Details */}
+          <Route
+            path="/customer/:id"
+            element={<CustomerDetail />}
+          />
+
+          {/* Risk Analytics */}
+          <Route
+            path="/risk"
+            element={<RiskAnalytics />}
+          />
+          <Route path="/analytics" element={<RiskAnalytics />} />
+
+          {/* Revenue Risk */}
+          <Route
+            path="/revenue"
+            element={<RevenueRisk />}
+          />
+          <Route path="/revenue-risk" element={<RevenueRisk />} />
+
+          {/* Retention Actions */}
+          <Route
+            path="/retention"
+            element={<RetentionActions />}
+          />
+          <Route path="/risk-analysis" element={<RetentionActions />} />
+
+        </Route>
+
+        {/* Redirect unknown URLs to Dashboard */}
+        <Route
+          path="*"
+          element={<Navigate to="/" replace />}
+        />
+
+      </Routes>
+    </BrowserRouter>
   );
 };
 

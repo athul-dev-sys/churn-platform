@@ -1,7 +1,63 @@
-@tailwindcss base;
-@tailwindcss components;
-@tailwindcss utilities;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: light;
+}
 
 body {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: #f8f1e5;
+  color: #171624;
+}
+
+/* Page canvases deliberately stay transparent so the shared cream image shows through. */
+.min-h-screen[class*="radial-gradient"] {
+  background-image: none !important;
+  background-color: transparent !important;
+}
+
+@layer components {
+  .glass-card {
+    @apply border border-white/70 bg-white/65 shadow-sm backdrop-blur-xl;
+  }
+  .glass-button {
+    @apply border border-white/80 bg-white/65 text-[#332e46] shadow-sm backdrop-blur-xl transition hover:border-[#7b2ce2] hover:text-[#6824df];
+  }
+  .eyebrow {
+    @apply text-[11px] font-bold uppercase tracking-[.15em] text-[#6824df];
+  }
+  .page-title {
+    @apply text-3xl font-bold tracking-tight text-[#171624];
+  }
+  .page-subtitle {
+    @apply text-sm leading-6 text-[#625e6e];
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #eef5f1;
+}
+::-webkit-scrollbar-thumb {
+  background: #c3d9cc;
+  border-radius: 3px;
+}
+
+/* Monetix Card & Glass Styling */
+.monetix-card {
+  background-color: #ffffff;
+  border: 1px solid #e3eee7;
+  box-shadow: 0 4px 20px -2px rgba(15, 41, 30, 0.04);
+}
+
+.monetix-glass {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(227, 238, 231, 0.7);
 }
