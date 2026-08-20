@@ -14,9 +14,14 @@ import { ModelServiceRequest, ModelServiceResponse } from '../types/modelService
  */
 export async function getCustomers(req: Request, res: Response): Promise<Response> {
   try {
-    const { segment, riskBand } = req.query;
+    const { segment, riskBand, page, limit } = req.query;
 
-    if (segment !== undefined) {
+    if (
+      segment !== undefined &&
+      typeof segment === 'string' &&
+      segment.trim() !== '' &&
+      segment.toLowerCase() !== 'all'
+    ) {
       return res.status(400).json({
         error:
           'Segment filtering is not supported: the Customer model has no relation to Segment in the current Prisma schema.',
@@ -24,8 +29,13 @@ export async function getCustomers(req: Request, res: Response): Promise<Respons
     }
 
     let parsedBand: RiskBand | null = null;
-    if (riskBand !== undefined) {
-      parsedBand = parseRiskBand(riskBand);
+    if (
+      riskBand !== undefined &&
+      typeof riskBand === 'string' &&
+      riskBand.trim() !== '' &&
+      riskBand.toLowerCase() !== 'all'
+    ) {
+      parsedBand = parseRiskBand(riskBand as string);
       if (!parsedBand) {
         return res.status(400).json({
           error: `Invalid riskBand parameter: '${riskBand}'. Valid values are: High, Medium, Low.`,
@@ -33,27 +43,50 @@ export async function getCustomers(req: Request, res: Response): Promise<Respons
       }
     }
 
-    const customers = await prisma.customer.findMany({
+    const pageNum = parseInt(page as string, 10) || 1;
+    const limitNum = limit === 'all' ? 0 : parseInt(limit as string, 10) || 50;
+
+    const whereClause: any = {};
+    if (parsedBand) {
+      whereClause.scores = {
+        some: {
+          riskBand: parsedBand,
+        },
+      };
+    }
+
+    const total = await prisma.customer.count({ where: whereClause });
+
+    const findOptions: any = {
+      where: whereClause,
       include: {
         scores: {
           orderBy: {
             scoredAt: 'desc',
           },
+          take: 1,
         },
       },
       orderBy: {
         customerId: 'asc',
       },
-    });
+    };
 
-    if (parsedBand) {
-      const filtered = customers.filter(
-        (c) => c.scores.length > 0 && c.scores[0].riskBand === parsedBand
-      );
-      return res.json(filtered);
+    if (limitNum > 0) {
+      findOptions.skip = (pageNum - 1) * limitNum;
+      findOptions.take = limitNum;
     }
 
-    return res.json(customers);
+    const customers = await prisma.customer.findMany(findOptions);
+    const totalPages = limitNum > 0 ? Math.ceil(total / limitNum) : 1;
+
+    return res.json({
+      data: customers,
+      total,
+      page: pageNum,
+      totalPages,
+      limit: limitNum || total,
+    });
   } catch (error) {
     console.error('Error fetching customers:', error);
     return res.status(500).json({ error: 'Internal server error fetching customers' });
@@ -188,79 +221,109 @@ export async function scoreBatch(req: Request, res: Response): Promise<Response>
     }
 
     const modelServiceUrl = process.env.MODEL_SERVICE_URL || 'http://localhost:8000';
-    const createdScores = [];
+    const scoresToInsert: {
+      customerId: string;
+      score: number;
+      riskBand: RiskBand;
+      reason: string;
+      revenueAtRisk: number;
+    }[] = [];
 
-    for (const customer of targetCustomers) {
-      let score: number;
-      let riskBand: RiskBand;
+    const CHUNK_SIZE = 500;
+    let useBatchEndpoint = true;
 
-      try {
-        const payload: ModelServiceRequest = {
-          customer_id: customer.customerId,
-          tenure: customer.tenure,
-          contract_type: customer.contractType,
-          monthly_charges: customer.monthlyCharges,
-          total_charges: customer.totalCharges,
-          internet_service: customer.internetService,
-          payment_method: customer.paymentMethod,
-        };
+    for (let i = 0; i < targetCustomers.length; i += CHUNK_SIZE) {
+      const chunk = targetCustomers.slice(i, i + CHUNK_SIZE);
+      
+      if (useBatchEndpoint) {
+        try {
+          const payload = chunk.map((c) => ({
+            customer_id: c.customerId,
+            tenure_in_months: c.tenure,
+            contract: c.contractType,
+            monthly_charge: c.monthlyCharges,
+            total_charges: c.totalCharges,
+            internet_service: c.internetService === 'No internet service' ? 'No' : 'Yes',
+            internet_type: c.internetService === 'No internet service' ? 'None' : c.internetService,
+            payment_method: c.paymentMethod,
+          }));
 
-        const response = await fetch(`${modelServiceUrl}/predict`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+          const response = await fetch(`${modelServiceUrl}/predict-batch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
 
-        if (response.ok) {
-          const data = (await response.json()) as ModelServiceResponse;
-          score = data.churn_probability;
-          const parsed = parseRiskBand(data.risk_band);
-          riskBand = parsed || RiskBand.Medium;
-        } else {
-          throw new Error(`Model service error: ${response.statusText}`);
+          if (response.ok) {
+            const predictions = (await response.json()) as { churn_probability: number; risk_band: string }[];
+            for (let j = 0; j < chunk.length; j++) {
+              const c = chunk[j];
+              const pred = predictions[j];
+              const score = pred.churn_probability;
+              const parsed = parseRiskBand(pred.risk_band);
+              const riskBand = parsed || RiskBand.Medium;
+              const revenueAtRisk = c.totalCharges > 0 ? c.totalCharges : parseFloat((c.monthlyCharges * 12).toFixed(2));
+              const reason = getRiskReason(riskBand, c.tenure, c.contractType, c.monthlyCharges);
+
+              scoresToInsert.push({
+                customerId: c.id,
+                score,
+                riskBand,
+                reason,
+                revenueAtRisk,
+              });
+            }
+            continue;
+          } else {
+            useBatchEndpoint = false;
+          }
+        } catch (err) {
+          useBatchEndpoint = false;
         }
-      } catch (err) {
-        console.warn(`Model service request failed for ${customer.customerId}, using fallback score logic:`, err);
-        if (customer.contractType === 'Month-to-month' && customer.monthlyCharges > 75) {
+      }
+
+      for (const c of chunk) {
+        let score: number;
+        let riskBand: RiskBand;
+
+        if (c.contractType.toLowerCase().includes('month') && c.monthlyCharges > 75) {
           score = 0.78;
           riskBand = RiskBand.High;
-        } else if (customer.contractType === 'Month-to-month') {
+        } else if (c.contractType.toLowerCase().includes('month')) {
           score = 0.45;
           riskBand = RiskBand.Medium;
         } else {
           score = 0.15;
           riskBand = RiskBand.Low;
         }
-      }
 
-      const revenueAtRisk =
-        customer.totalCharges > 0
-          ? customer.totalCharges
-          : parseFloat((customer.monthlyCharges * 12).toFixed(2));
+        const revenueAtRisk = c.totalCharges > 0 ? c.totalCharges : parseFloat((c.monthlyCharges * 12).toFixed(2));
+        const reason = getRiskReason(riskBand, c.tenure, c.contractType, c.monthlyCharges);
 
-      const reason = getRiskReason(
-        riskBand,
-        customer.tenure,
-        customer.contractType,
-        customer.monthlyCharges
-      );
-
-      const newScore = await prisma.churnScore.create({
-        data: {
-          customerId: customer.id,
+        scoresToInsert.push({
+          customerId: c.id,
           score,
           riskBand,
           reason,
           revenueAtRisk,
-        },
-      });
-
-      createdScores.push(newScore);
+        });
+      }
     }
 
+    await prisma.churnScore.createMany({
+      data: scoresToInsert,
+    });
+
+    const insertedScores = await prisma.churnScore.findMany({
+      where: {
+        customerId: { in: targetCustomers.map((c) => c.id) },
+      },
+      take: 100,
+    });
+
     return res.json({
-      processed: createdScores.length,
-      scores: createdScores,
+      processed: scoresToInsert.length,
+      scores: insertedScores,
     });
   } catch (error) {
     console.error('Error running batch scoring:', error);

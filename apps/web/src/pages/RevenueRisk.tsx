@@ -14,7 +14,7 @@ export const RevenueRisk: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true); setError(null);
-    try { const [s, c] = await Promise.all([fetchSummary(), fetchCustomers()]); setSummary(s); setCustomers(c); }
+    try { const [s, cRes] = await Promise.all([fetchSummary(), fetchCustomers(undefined, undefined, 1, 1000)]); setSummary(s); setCustomers(Array.isArray(cRes) ? cRes : cRes.data || []); }
     catch (err) { setError(err instanceof Error ? err.message : 'Unable to connect to the prediction API.'); }
     finally { setLoading(false); }
   };
@@ -23,7 +23,10 @@ export const RevenueRisk: React.FC = () => {
   const highRisk = useMemo(() => customers.filter(c => c.scores?.[0]?.riskBand === 'High').sort((a,b) => (b.scores?.[0]?.revenueAtRisk || b.monthlyCharges) - (a.scores?.[0]?.revenueAtRisk || a.monthlyCharges)).slice(0, 10), [customers]);
   const byContract = useMemo(() => {
     const names = ['Month-to-month', 'One year', 'Two year'];
-    return names.map(name => ({ name, revenueRisk: customers.filter(c => c.contractType === name && c.scores?.[0]?.riskBand === 'High').reduce((sum,c) => sum + (c.scores?.[0]?.revenueAtRisk || c.monthlyCharges), 0) }));
+    return names.map(name => ({
+      name,
+      revenueRisk: customers.filter(c => c.contractType && c.contractType.toLowerCase().replace(/-/g, ' ') === name.toLowerCase().replace(/-/g, ' ') && c.scores?.[0]?.riskBand === 'High').reduce((sum,c) => sum + (c.scores?.[0]?.revenueAtRisk || c.monthlyCharges), 0)
+    }));
   }, [customers]);
 
   return <div className="space-y-6">

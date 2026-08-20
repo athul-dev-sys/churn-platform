@@ -35,6 +35,9 @@ model ChurnScore {
   reason        String
   revenueAtRisk Float
   scoredAt      DateTime @default(now())
+
+  @@index([customerId])
+  @@index([riskBand])
 }
 
 model Segment {

@@ -242,3 +242,87 @@ def predict_churn(features: CustomerFeatures):
             status_code=500,
             detail=f"Prediction failed: {str(e)}"
         )
+
+def process_features_df(items: list[CustomerFeatures]) -> pd.DataFrame:
+    rows = []
+    for f in items:
+        rows.append({
+            "Gender": f.gender,
+            "Age": f.age,
+            "Under 30": f.under_30,
+            "Senior Citizen": f.senior_citizen,
+            "Married": f.married,
+            "Dependents": f.dependents,
+            "Number of Dependents": f.number_of_dependents,
+            "Latitude": f.latitude,
+            "Longitude": f.longitude,
+            "Referred a Friend": f.referred_a_friend,
+            "Number of Referrals": f.number_of_referrals,
+            "Tenure in Months": f.tenure_in_months,
+            "Offer": f.offer,
+            "Phone Service": f.phone_service,
+            "Avg Monthly Long Distance Charges": f.avg_monthly_long_distance_charges,
+            "Multiple Lines": f.multiple_lines,
+            "Internet Service": f.internet_service,
+            "Internet Type": f.internet_type,
+            "Avg Monthly GB Download": f.avg_monthly_gb_download,
+            "Online Security": f.online_security,
+            "Online Backup": f.online_backup,
+            "Device Protection Plan": f.device_protection_plan,
+            "Premium Tech Support": f.premium_tech_support,
+            "Streaming TV": f.streaming_tv,
+            "Streaming Movies": f.streaming_movies,
+            "Streaming Music": f.streaming_music,
+            "Unlimited Data": f.unlimited_data,
+            "Contract": f.contract,
+            "Paperless Billing": f.paperless_billing,
+            "Payment Method": f.payment_method,
+            "Monthly Charge": f.monthly_charge,
+            "Total Charges": f.total_charges,
+            "Total Refunds": f.total_refunds,
+            "Total Extra Data Charges": f.total_extra_data_charges,
+            "Total Long Distance Charges": f.total_long_distance_charges,
+            "Total Revenue": f.total_revenue,
+            "Population": f.population,
+        })
+    
+    customer_data = pd.DataFrame(rows)
+    customer_data["Gender"] = customer_data["Gender"].map({"Male": 1, "Female": 0}).fillna(1)
+    
+    binary_columns = [
+        "Under 30", "Senior Citizen", "Married", "Dependents", "Referred a Friend",
+        "Phone Service", "Multiple Lines", "Internet Service", "Online Security",
+        "Online Backup", "Device Protection Plan", "Premium Tech Support",
+        "Streaming TV", "Streaming Movies", "Streaming Music", "Unlimited Data",
+        "Paperless Billing"
+    ]
+    for col in binary_columns:
+        customer_data[col] = customer_data[col].map({"Yes": 1, "No": 0}).fillna(0)
+        
+    return customer_data
+
+@app.post("/predict-batch", response_model=list[PredictionResponse])
+def predict_churn_batch(features_list: list[CustomerFeatures]):
+    try:
+        if not features_list:
+            return []
+            
+        customer_data = process_features_df(features_list)
+        processed_data = preprocessor.transform(customer_data)
+        probs = model.predict_proba(processed_data)[:, 1]
+        
+        results = []
+        for i, f in enumerate(features_list):
+            prob = float(probs[i])
+            risk_band = "High" if prob >= 0.6 else "Medium" if prob >= 0.3 else "Low"
+            decision = make_decision(prob, f.contract, f.tenure_in_months, f.monthly_charge)
+            results.append(PredictionResponse(
+                churn_probability=prob,
+                risk_band=risk_band,
+                decision=decision["decision"],
+                recommended_action=decision["recommended_action"],
+                priority=decision["priority"]
+            ))
+        return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch prediction failed: {str(e)}")

@@ -14,7 +14,7 @@ export const RetentionActions: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true); setError(null); setSelectedIds([]); setBatchResult(null); setBatchError(null);
-    try { setCustomers(await fetchCustomers()); }
+    try { const res = await fetchCustomers(undefined, undefined, 1, 500); setCustomers(Array.isArray(res) ? res : res.data || []); }
     catch (err) { setError(err instanceof Error ? err.message : 'Unable to connect to the prediction API.'); }
     finally { setLoading(false); }
   };
@@ -26,7 +26,12 @@ export const RetentionActions: React.FC = () => {
   const runBatch = async () => {
     if (!selectedIds.length) return;
     setBatchLoading(true); setBatchError(null); setBatchResult(null);
-    try { const result = await scoreBatch(selectedIds); setBatchResult(result); setCustomers(await fetchCustomers()); }
+    try {
+      const result = await scoreBatch(selectedIds);
+      setBatchResult(result);
+      const res = await fetchCustomers(undefined, undefined, 1, 500);
+      setCustomers(Array.isArray(res) ? res : res.data || []);
+    }
     catch (err) { setBatchError(err instanceof Error ? err.message : 'Batch prediction process failed.'); }
     finally { setBatchLoading(false); }
   };

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowUpDown, ChevronRight, RefreshCw, Search, SlidersHorizontal, User } from 'lucide-react';
+import { AlertCircle, ArrowUpDown, ChevronLeft, ChevronRight, RefreshCw, Search, SlidersHorizontal, User } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Customer, fetchCustomers } from '../lib/api';
+import { Customer, fetchCustomers, PaginatedCustomers } from '../lib/api';
 
 const riskStyle: Record<string, string> = {
   High: 'bg-red-50 text-red-700 border-red-200',
@@ -11,24 +11,34 @@ const riskStyle: Record<string, string> = {
 
 export const Customers: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [paginatedData, setPaginatedData] = useState<PaginatedCustomers | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [segment, setSegment] = useState(searchParams.get('segment') || '');
   const [riskBand, setRiskBand] = useState(searchParams.get('riskBand') || '');
   const [contract, setContract] = useState('');
+  const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<'score' | 'tenure' | 'charges'>('score');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const loadCustomers = async () => {
     setLoading(true); setError(null);
-    try { setCustomers(await fetchCustomers(segment || undefined, riskBand || undefined)); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Unable to connect to the prediction API.'); }
-    finally { setLoading(false); }
+    try {
+      const res = await fetchCustomers(segment || undefined, riskBand || undefined, page, 50);
+      setPaginatedData(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to connect to the prediction API.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { void loadCustomers(); }, [segment, riskBand]);
+  useEffect(() => {
+    void loadCustomers();
+  }, [segment, riskBand, page]);
+
+  const customers = paginatedData?.data || [];
 
   const filtered = useMemo(() => customers.filter(c => {
     const term = searchTerm.toLowerCase();
@@ -44,12 +54,17 @@ export const Customers: React.FC = () => {
   };
 
   const clearFilters = () => {
-    setSearchTerm(''); setSegment(''); setRiskBand(''); setContract('');
+    setSearchTerm(''); setSegment(''); setRiskBand(''); setContract(''); setPage(1);
     setSearchParams({});
   };
 
-  const updateSegment = (value: string) => { setSegment(value); setSearchParams(p => { value ? p.set('segment', value) : p.delete('segment'); return p; }); };
-  const updateRisk = (value: string) => { setRiskBand(value); setSearchParams(p => { value ? p.set('riskBand', value) : p.delete('riskBand'); return p; }); };
+  const updateSegment = (value: string) => { setPage(1); setSegment(value); setSearchParams(p => { value ? p.set('segment', value) : p.delete('segment'); return p; }); };
+  const updateRisk = (value: string) => { setPage(1); setRiskBand(value); setSearchParams(p => { value ? p.set('riskBand', value) : p.delete('riskBand'); return p; }); };
+
+  const totalRecords = paginatedData?.total || 0;
+  const totalPages = paginatedData?.totalPages || 1;
+  const startCount = (page - 1) * 50 + 1;
+  const endCount = Math.min(page * 50, totalRecords);
 
   return (
     <div className="space-y-6">
@@ -72,7 +87,34 @@ export const Customers: React.FC = () => {
 
       {loading ? <StateCard loading /> : error ? <StateCard error={error} onRetry={() => void loadCustomers()} /> : filtered.length === 0 ? <StateCard empty /> : (
         <section className="glass-card overflow-hidden rounded-3xl">
-          <div className="flex items-center justify-between border-b border-[#eee8df] px-5 py-4 sm:px-6"><div><p className="text-xs font-bold text-slate-800">Customer Accounts</p><p className="mt-1 text-[11px] text-slate-400">{filtered.length.toLocaleString()} records shown</p></div><span className="rounded-full bg-[#f0e9ff] px-3 py-1 text-[10px] font-bold text-[#6824df]">Live API data</span></div>
+          <div className="flex items-center justify-between border-b border-[#eee8df] px-5 py-4 sm:px-6">
+            <div>
+              <p className="text-xs font-bold text-slate-800">Customer Accounts</p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Showing {startCount}–{endCount} of {totalRecords.toLocaleString()} records
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-[#f0e9ff] px-3 py-1 text-[10px] font-bold text-[#6824df] mr-2">Paginated (50/page)</span>
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-40"
+              >
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <span className="text-xs font-bold text-slate-600 px-1">
+                {page} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-40"
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
           <div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-left"><thead className="bg-slate-50/75"><tr>
             <th className="px-5 py-3 text-[9px] font-bold uppercase tracking-[.14em] text-slate-400">Customer</th>
             <Sortable label="Tenure" active={sortBy === 'tenure'} order={sortOrder} onClick={() => toggleSort('tenure')} />
@@ -94,6 +136,25 @@ export const Customers: React.FC = () => {
               <td className="px-5 py-4 text-right"><Link to={`/customer/${c.customerId}`} className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700">View <ChevronRight size={13} /></Link></td>
             </tr>; })}
           </tbody></table></div>
+          <div className="flex items-center justify-between border-t border-[#eee8df] px-5 py-4 sm:px-6">
+            <span className="text-xs text-slate-500">Page {page} of {totalPages}</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-40"
+              >
+                <ChevronLeft size={14} /> Previous
+              </button>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-40"
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
         </section>
       )}
     </div>

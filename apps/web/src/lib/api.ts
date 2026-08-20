@@ -32,14 +32,53 @@ export interface SummaryStats {
   averageChurnScore: number;
 }
 
-export async function fetchCustomers(segment?: string, riskBand?: string): Promise<Customer[]> {
-  const params = new URLSearchParams();
-  if (segment) params.append('segment', segment);
-  if (riskBand) params.append('riskBand', riskBand);
+export interface PaginatedCustomers {
+  data: Customer[];
+  total: number;
+  page: number;
+  totalPages: number;
+  limit: number;
+}
 
-  const res = await fetch(`${BASE_URL}/api/customers?${params.toString()}`);
+export async function fetchCustomers(
+  segment?: string,
+  riskBand?: string,
+  page?: number,
+  limit?: number
+): Promise<PaginatedCustomers> {
+  const params = new URLSearchParams();
+  if (segment && segment.trim() !== '' && segment.toLowerCase() !== 'all') {
+    params.append('segment', segment);
+  }
+  if (riskBand && riskBand.trim() !== '' && riskBand.toLowerCase() !== 'all') {
+    params.append('riskBand', riskBand);
+  }
+  if (page) params.append('page', page.toString());
+  if (limit) params.append('limit', limit.toString());
+
+  const query = params.toString();
+  const url = `${BASE_URL}/api/customers${query ? `?${query}` : ''}`;
+  const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`Failed to fetch customers: ${res.statusText}`);
+  }
+  const body = await res.json();
+  if (Array.isArray(body)) {
+    return {
+      data: body,
+      total: body.length,
+      page: 1,
+      totalPages: 1,
+      limit: body.length,
+    };
+  }
+  return body;
+}
+
+export async function fetchCustomerById(id: string): Promise<Customer> {
+  const res = await fetch(`${BASE_URL}/api/customers/${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch customer '${id}': ${res.statusText}`);
   }
   return res.json();
 }

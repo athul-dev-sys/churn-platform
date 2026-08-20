@@ -1,181 +1,89 @@
-import { PrismaClient, RiskBand } from '@prisma/client';
+import fs from 'fs';
+import path from 'path';
+import { parse } from 'csv-parse/sync';
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding database with sample customers and churn scores...');
+  console.log('Starting seed process...');
 
-  // Clean existing data
-  await prisma.churnScore.deleteMany();
-  await prisma.customer.deleteMany();
-  await prisma.segment.deleteMany();
+  const csvPaths = [
+    path.resolve(__dirname, '../../../data/processed/churn_processed.csv'),
+    path.resolve(__dirname, '../../../data/processed/churn_cleaned_readable.csv'),
+    path.resolve(__dirname, '../../data/processed/churn_processed.csv'),
+  ];
 
-  // Create segments
-  await prisma.segment.createMany({
-    data: [
-      { name: 'Enterprise', description: 'High volume enterprise contracts' },
-      { name: 'SMB', description: 'Small and medium business accounts' },
-      { name: 'Consumer High-Value', description: 'High monthly charge consumer plans' },
-    ],
+  let csvPath = '';
+  for (const p of csvPaths) {
+    if (fs.existsSync(p)) {
+      csvPath = p;
+      break;
+    }
+  }
+
+  if (!csvPath) {
+    throw new Error(`CSV file not found in paths: ${csvPaths.join(', ')}`);
+  }
+
+  console.log(`Reading CSV data from: ${csvPath}`);
+  const fileContent = fs.readFileSync(csvPath, 'utf-8');
+
+  const records = parse(fileContent, {
+    columns: true,
+    skip_empty_lines: true,
+    trim: true,
   });
 
-  // Create Customers with scores
-  const c1 = await prisma.customer.create({
-    data: {
-      customerId: 'CUST-9821',
-      tenure: 24,
-      contractType: 'Month-to-month',
-      monthlyCharges: 85.50,
-      totalCharges: 2052.00,
-      internetService: 'Fiber optic',
-      paymentMethod: 'Electronic check',
-      actualChurn: false,
-      scores: {
-        create: [
-          {
-            score: 0.78,
-            riskBand: RiskBand.High,
-            reason: 'High monthly charge relative to month-to-month contract length',
-            revenueAtRisk: 2052.00,
-            scoredAt: new Date('2026-08-17T12:00:00Z'),
-          },
-        ],
-      },
-    },
+  console.log(`Parsed ${records.length} records from CSV. Mapping fields...`);
+
+  const customersData = records.map((row: any) => {
+    const customerId = row['Customer ID'] || row['customerId'] || row['Customer_ID'];
+    const tenure = parseInt(row['Tenure in Months'] || row['tenure'] || '0', 10);
+    const contractType = row['Contract'] || row['contractType'] || 'Month-to-Month';
+    const monthlyCharges = parseFloat(row['Monthly Charge'] || row['monthlyCharges'] || '0');
+    const totalChargesRaw = row['Total Charges'] || row['totalCharges'] || '0';
+    const totalCharges = parseFloat(totalChargesRaw) || 0;
+
+    let internetService = row['Internet Type'] || row['Internet Service'] || row['internetService'] || 'DSL';
+    if (internetService === 'None' || internetService === 'No') {
+      internetService = 'No internet service';
+    }
+
+    const paymentMethod = row['Payment Method'] || row['paymentMethod'] || 'Electronic check';
+
+    const churnVal = row['Churn Value'] || row['actualChurn'] || '0';
+    const actualChurn = churnVal === '1' || churnVal === 'Yes' || churnVal === 'true';
+
+    return {
+      customerId,
+      tenure,
+      contractType,
+      monthlyCharges,
+      totalCharges,
+      internetService,
+      paymentMethod,
+      actualChurn,
+    };
   });
 
-  const c2 = await prisma.customer.create({
-    data: {
-      customerId: 'CUST-9822',
-      tenure: 36,
-      contractType: 'One year',
-      monthlyCharges: 45.00,
-      totalCharges: 1620.00,
-      internetService: 'DSL',
-      paymentMethod: 'Bank transfer',
-      actualChurn: false,
-      scores: {
-        create: [
-          {
-            score: 0.15,
-            riskBand: RiskBand.Low,
-            reason: 'Long tenure and annual contract commitment',
-            revenueAtRisk: 1620.00,
-            scoredAt: new Date('2026-08-17T12:00:00Z'),
-          },
-        ],
-      },
-    },
+  const validCustomers = customersData.filter((c: { customerId?: string }) => c.customerId);
+
+  console.log(`Inserting ${validCustomers.length} valid customer records into database...`);
+
+  const result = await prisma.customer.createMany({
+    data: validCustomers,
+    skipDuplicates: true,
   });
 
-  const c3 = await prisma.customer.create({
-    data: {
-      customerId: 'CUST-9823',
-      tenure: 14,
-      contractType: 'Month-to-month',
-      monthlyCharges: 65.00,
-      totalCharges: 910.00,
-      internetService: 'Fiber optic',
-      paymentMethod: 'Electronic check',
-      actualChurn: false,
-      scores: {
-        create: [
-          {
-            score: 0.48,
-            riskBand: RiskBand.Medium,
-            reason: 'Moderate tenure with flexible month-to-month agreement',
-            revenueAtRisk: 910.00,
-            scoredAt: new Date('2026-08-17T12:00:00Z'),
-          },
-        ],
-      },
-    },
-  });
-
-  const c4 = await prisma.customer.create({
-    data: {
-      customerId: 'CUST-9824',
-      tenure: 48,
-      contractType: 'Two year',
-      monthlyCharges: 110.00,
-      totalCharges: 5280.00,
-      internetService: 'Fiber optic',
-      paymentMethod: 'Mailed check',
-      actualChurn: false,
-      scores: {
-        create: [
-          {
-            score: 0.22,
-            riskBand: RiskBand.Low,
-            reason: 'Stable account metrics and low churn probability',
-            revenueAtRisk: 5280.00,
-            scoredAt: new Date('2026-08-17T12:00:00Z'),
-          },
-        ],
-      },
-    },
-  });
-
-  const c5 = await prisma.customer.create({
-    data: {
-      customerId: 'CUST-9825',
-      tenure: 6,
-      contractType: 'Month-to-month',
-      monthlyCharges: 95.00,
-      totalCharges: 570.00,
-      internetService: 'Fiber optic',
-      paymentMethod: 'Electronic check',
-      actualChurn: true,
-      scores: {
-        create: [
-          {
-            score: 0.84,
-            riskBand: RiskBand.High,
-            reason: 'Short customer tenure (< 12 months) with high churn risk indicators',
-            revenueAtRisk: 570.00,
-            scoredAt: new Date('2026-08-17T12:00:00Z'),
-          },
-        ],
-      },
-    },
-  });
-
-  // Unscored customers for testing batch scoring
-  await prisma.customer.create({
-    data: {
-      customerId: 'CUST-9826',
-      tenure: 8,
-      contractType: 'Month-to-month',
-      monthlyCharges: 70.00,
-      totalCharges: 560.00,
-      internetService: 'DSL',
-      paymentMethod: 'Electronic check',
-      actualChurn: false,
-    },
-  });
-
-  await prisma.customer.create({
-    data: {
-      customerId: 'CUST-9827',
-      tenure: 18,
-      contractType: 'One year',
-      monthlyCharges: 55.00,
-      totalCharges: 990.00,
-      internetService: 'Fiber optic',
-      paymentMethod: 'Bank transfer',
-      actualChurn: false,
-    },
-  });
-
-  console.log(`Database seeded successfully! Created 7 customers and 5 initial scores.`);
+  console.log(`Successfully seeded ${result.count} customers into the database!`);
 }
 
 main()
-  .then(async () => {
-    await prisma.$disconnect();
-  })
-  .catch(async (e) => {
-    console.error(e);
-    await prisma.$disconnect();
+  .catch((e) => {
+    console.error('Error during seeding:', e);
     process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
   });
