@@ -1,35 +1,11 @@
 import { PrismaClient, RiskBand } from '@prisma/client';
 import dotenv from 'dotenv';
 import path from 'path';
+import { calculateDynamicChurnScore, getRiskReason, parseRiskBand } from '../src/utils/riskBand';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const prisma = new PrismaClient();
-
-function getRiskReason(riskBand: RiskBand, tenure: number, contractType: string, monthlyCharges: number): string {
-  if (riskBand === RiskBand.High) {
-    if (contractType.toLowerCase().includes('month') && monthlyCharges > 75) {
-      return 'High monthly charge relative to short contract length';
-    }
-    return 'Recent decrease in service engagement and elevated billing rate';
-  }
-  if (riskBand === RiskBand.Medium) {
-    if (tenure <= 12) {
-      return 'Early-tenure account with moderate contract duration';
-    }
-    return 'Moderate usage trend across active internet products';
-  }
-  return 'Stable long-term account with low churn probability';
-}
-
-function parseRiskBand(val: string): RiskBand | null {
-  if (!val) return null;
-  const normalized = val.trim().toLowerCase();
-  if (normalized === 'high') return RiskBand.High;
-  if (normalized === 'medium') return RiskBand.Medium;
-  if (normalized === 'low') return RiskBand.Low;
-  return null;
-}
 
 async function main() {
   console.log('Starting bulk customer scoring process...');
@@ -99,9 +75,9 @@ async function main() {
             const pred = predictions[j];
             const score = pred.churn_probability;
             const parsed = parseRiskBand(pred.risk_band);
-            const riskBand = parsed || RiskBand.Medium;
+            const riskBand = parsed || (score >= 0.6 ? RiskBand.High : score >= 0.3 ? RiskBand.Medium : RiskBand.Low);
             const revenueAtRisk = c.totalCharges > 0 ? c.totalCharges : parseFloat((c.monthlyCharges * 12).toFixed(2));
-            const reason = getRiskReason(riskBand, c.tenure, c.contractType, c.monthlyCharges);
+            const reason = getRiskReason(riskBand, c.tenure, c.contractType, c.monthlyCharges, c.internetService);
 
             scoresToInsert.push({
               customerId: c.id,
@@ -121,34 +97,28 @@ async function main() {
       }
     }
 
-    // Heuristic batch scoring fallback if model-service is not running
+    // Dynamic continuous batch scoring fallback if model-service is not running
     for (const c of chunk) {
-      let score: number;
-      let riskBand: RiskBand;
-
-      if (c.contractType.toLowerCase().includes('month') && c.monthlyCharges > 75) {
-        score = 0.78;
-        riskBand = RiskBand.High;
-      } else if (c.contractType.toLowerCase().includes('month')) {
-        score = 0.45;
-        riskBand = RiskBand.Medium;
-      } else {
-        score = 0.15;
-        riskBand = RiskBand.Low;
-      }
+      const dynamicResult = calculateDynamicChurnScore({
+        customerId: c.customerId,
+        tenure: c.tenure,
+        contractType: c.contractType,
+        monthlyCharges: c.monthlyCharges,
+        internetService: c.internetService,
+        paymentMethod: c.paymentMethod,
+      });
 
       const revenueAtRisk = c.totalCharges > 0 ? c.totalCharges : parseFloat((c.monthlyCharges * 12).toFixed(2));
-      const reason = getRiskReason(riskBand, c.tenure, c.contractType, c.monthlyCharges);
 
       scoresToInsert.push({
         customerId: c.id,
-        score,
-        riskBand,
-        reason,
+        score: dynamicResult.score,
+        riskBand: dynamicResult.riskBand,
+        reason: dynamicResult.reason,
         revenueAtRisk,
       });
     }
-    console.log(`Scored batch ${i / CHUNK_SIZE + 1} via fast engine calculation.`);
+    console.log(`Scored batch ${i / CHUNK_SIZE + 1} via dynamic continuous engine calculation.`);
   }
 
   console.log(`Bulk inserting ${scoresToInsert.length} ChurnScore records into Neon PostgreSQL...`);

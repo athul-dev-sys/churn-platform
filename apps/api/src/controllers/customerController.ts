@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { RiskBand } from '@prisma/client';
 import { prisma } from '../lib/prisma';
-import { parseRiskBand, getRiskReason } from '../utils/riskBand';
+import { parseRiskBand, getRiskReason, calculateDynamicChurnScore } from '../utils/riskBand';
 import { ModelServiceRequest, ModelServiceResponse } from '../types/modelService';
 
 /**
@@ -125,60 +125,62 @@ export async function getCustomerById(req: Request, res: Response): Promise<Resp
   }
 }
 
+let summaryCache: { data: any; timestamp: number } | null = null;
+const CACHE_TTL_MS = 60000; // 60 seconds cache
+
+export function invalidateSummaryCache() {
+  summaryCache = null;
+}
+
 /**
  * GET /api/summary
  * Retrieve global aggregate churn summary statistics.
  */
 export async function getSummary(req: Request, res: Response): Promise<Response> {
   try {
-    const customers = await prisma.customer.findMany({
-      include: {
-        scores: {
-          orderBy: {
-            scoredAt: 'desc',
-          },
-          take: 1,
-        },
-      },
-    });
-
-    const totalCustomers = customers.length;
-    let highRiskCount = 0;
-    let mediumRiskCount = 0;
-    let lowRiskCount = 0;
-    let totalRevenueAtRisk = 0;
-    let scoreSum = 0;
-    let scoredCount = 0;
-
-    for (const c of customers) {
-      if (c.scores.length > 0) {
-        const latest = c.scores[0];
-        scoredCount += 1;
-        scoreSum += latest.score;
-
-        if (latest.riskBand === RiskBand.High) {
-          highRiskCount += 1;
-          totalRevenueAtRisk += latest.revenueAtRisk;
-        } else if (latest.riskBand === RiskBand.Medium) {
-          mediumRiskCount += 1;
-          totalRevenueAtRisk += latest.revenueAtRisk;
-        } else if (latest.riskBand === RiskBand.Low) {
-          lowRiskCount += 1;
-        }
-      }
+    const now = Date.now();
+    if (summaryCache && now - summaryCache.timestamp < CACHE_TTL_MS) {
+      return res.json(summaryCache.data);
     }
 
-    const averageChurnScore =
-      scoredCount > 0 ? parseFloat((scoreSum / scoredCount).toFixed(2)) : 0;
+    const [totalCustomers, aggregateResult] = await Promise.all([
+      prisma.customer.count(),
+      prisma.$queryRaw<Array<{
+        highRiskCount: number;
+        mediumRiskCount: number;
+        lowRiskCount: number;
+        totalRevenueAtRisk: number;
+        averageChurnScore: number;
+      }>>`
+        SELECT 
+          COUNT(*) FILTER (WHERE "riskBand" = 'High')::int as "highRiskCount",
+          COUNT(*) FILTER (WHERE "riskBand" = 'Medium')::int as "mediumRiskCount",
+          COUNT(*) FILTER (WHERE "riskBand" = 'Low')::int as "lowRiskCount",
+          COALESCE(SUM("revenueAtRisk") FILTER (WHERE "riskBand" IN ('High', 'Medium')), 0)::float as "totalRevenueAtRisk",
+          COALESCE(AVG("score"), 0)::float as "averageChurnScore"
+        FROM "ChurnScore"
+      `
+    ]);
 
-    return res.json({
+    const stats = aggregateResult[0] || {
+      highRiskCount: 0,
+      mediumRiskCount: 0,
+      lowRiskCount: 0,
+      totalRevenueAtRisk: 0,
+      averageChurnScore: 0,
+    };
+
+    const responseData = {
       totalCustomers,
-      highRiskCount,
-      mediumRiskCount,
-      lowRiskCount,
-      totalRevenueAtRisk: parseFloat(totalRevenueAtRisk.toFixed(2)),
-      averageChurnScore,
-    });
+      highRiskCount: Number(stats.highRiskCount || 0),
+      mediumRiskCount: Number(stats.mediumRiskCount || 0),
+      lowRiskCount: Number(stats.lowRiskCount || 0),
+      totalRevenueAtRisk: parseFloat(Number(stats.totalRevenueAtRisk || 0).toFixed(2)),
+      averageChurnScore: parseFloat(Number(stats.averageChurnScore || 0).toFixed(2)),
+    };
+
+    summaryCache = { data: responseData, timestamp: now };
+    return res.json(responseData);
   } catch (error) {
     console.error('Error computing summary:', error);
     return res.status(500).json({ error: 'Internal server error computing summary' });
@@ -261,9 +263,9 @@ export async function scoreBatch(req: Request, res: Response): Promise<Response>
               const pred = predictions[j];
               const score = pred.churn_probability;
               const parsed = parseRiskBand(pred.risk_band);
-              const riskBand = parsed || RiskBand.Medium;
+              const riskBand = parsed || (score >= 0.6 ? RiskBand.High : score >= 0.3 ? RiskBand.Medium : RiskBand.Low);
               const revenueAtRisk = c.totalCharges > 0 ? c.totalCharges : parseFloat((c.monthlyCharges * 12).toFixed(2));
-              const reason = getRiskReason(riskBand, c.tenure, c.contractType, c.monthlyCharges);
+              const reason = getRiskReason(riskBand, c.tenure, c.contractType, c.monthlyCharges, c.internetService);
 
               scoresToInsert.push({
                 customerId: c.id,
@@ -283,28 +285,22 @@ export async function scoreBatch(req: Request, res: Response): Promise<Response>
       }
 
       for (const c of chunk) {
-        let score: number;
-        let riskBand: RiskBand;
-
-        if (c.contractType.toLowerCase().includes('month') && c.monthlyCharges > 75) {
-          score = 0.78;
-          riskBand = RiskBand.High;
-        } else if (c.contractType.toLowerCase().includes('month')) {
-          score = 0.45;
-          riskBand = RiskBand.Medium;
-        } else {
-          score = 0.15;
-          riskBand = RiskBand.Low;
-        }
+        const dynamicResult = calculateDynamicChurnScore({
+          customerId: c.customerId,
+          tenure: c.tenure,
+          contractType: c.contractType,
+          monthlyCharges: c.monthlyCharges,
+          internetService: c.internetService,
+          paymentMethod: c.paymentMethod,
+        });
 
         const revenueAtRisk = c.totalCharges > 0 ? c.totalCharges : parseFloat((c.monthlyCharges * 12).toFixed(2));
-        const reason = getRiskReason(riskBand, c.tenure, c.contractType, c.monthlyCharges);
 
         scoresToInsert.push({
           customerId: c.id,
-          score,
-          riskBand,
-          reason,
+          score: dynamicResult.score,
+          riskBand: dynamicResult.riskBand,
+          reason: dynamicResult.reason,
           revenueAtRisk,
         });
       }
@@ -313,6 +309,8 @@ export async function scoreBatch(req: Request, res: Response): Promise<Response>
     await prisma.churnScore.createMany({
       data: scoresToInsert,
     });
+
+    invalidateSummaryCache();
 
     const insertedScores = await prisma.churnScore.findMany({
       where: {
