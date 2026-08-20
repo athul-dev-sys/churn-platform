@@ -40,7 +40,14 @@ async function main() {
   const customersData = records.map((row: any) => {
     const customerId = row['Customer ID'] || row['customerId'] || row['Customer_ID'];
     const tenure = parseInt(row['Tenure in Months'] || row['tenure'] || '0', 10);
-    const contractType = row['Contract'] || row['contractType'] || 'Month-to-Month';
+    const contractRaw = row['Contract'] || row['contractType'] || 'Month-to-Month';
+    const contractType = contractRaw.trim().toLowerCase() === 'month-to-month'
+      ? 'Month-to-month'
+      : contractRaw.trim().toLowerCase() === 'one year'
+      ? 'One year'
+      : contractRaw.trim().toLowerCase() === 'two year'
+      ? 'Two year'
+      : contractRaw.trim();
     const monthlyCharges = parseFloat(row['Monthly Charge'] || row['monthlyCharges'] || '0');
     const totalChargesRaw = row['Total Charges'] || row['totalCharges'] || '0';
     const totalCharges = parseFloat(totalChargesRaw) || 0;

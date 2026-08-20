@@ -14,7 +14,7 @@ export const RevenueRisk: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true); setError(null);
-    try { const [s, cRes] = await Promise.all([fetchSummary(), fetchCustomers(undefined, undefined, 1, 1000)]); setSummary(s); setCustomers(Array.isArray(cRes) ? cRes : cRes.data || []); }
+    try { const [s, cRes] = await Promise.all([fetchSummary(), fetchCustomers(undefined, undefined, 1, 10000)]); setSummary(s); setCustomers(Array.isArray(cRes) ? cRes : cRes.data || []); }
     catch (err) { setError(err instanceof Error ? err.message : 'Unable to connect to the prediction API.'); }
     finally { setLoading(false); }
   };
@@ -25,7 +25,14 @@ export const RevenueRisk: React.FC = () => {
     const names = ['Month-to-month', 'One year', 'Two year'];
     return names.map(name => ({
       name,
-      revenueRisk: customers.filter(c => c.contractType && c.contractType.toLowerCase().replace(/-/g, ' ') === name.toLowerCase().replace(/-/g, ' ') && c.scores?.[0]?.riskBand === 'High').reduce((sum,c) => sum + (c.scores?.[0]?.revenueAtRisk || c.monthlyCharges), 0)
+      revenueRisk: customers
+        .filter(c => {
+          if (!c.contractType) return false;
+          const matchesContract = c.contractType.toLowerCase().replace(/-/g, ' ') === name.toLowerCase().replace(/-/g, ' ');
+          const band = c.scores?.[0]?.riskBand;
+          return matchesContract && (band === 'High' || band === 'Medium');
+        })
+        .reduce((sum, c) => sum + (c.scores?.[0]?.revenueAtRisk || c.monthlyCharges), 0)
     }));
   }, [customers]);
 

@@ -12,13 +12,22 @@ export const RiskAnalytics: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true); setError(null);
-    try { const res = await fetchCustomers(undefined, undefined, 1, 1000); setCustomers(Array.isArray(res) ? res : res.data || []); }
+    try { const res = await fetchCustomers(undefined, undefined, 1, 10000); setCustomers(Array.isArray(res) ? res : res.data || []); }
     catch (err) { setError(err instanceof Error ? err.message : 'Unable to connect to the prediction API.'); }
     finally { setLoading(false); }
   };
   useEffect(() => { void loadData(); }, []);
 
-  const contractData = useMemo(() => aggregate(customers, c => c.contractType), [customers]);
+  const contractData = useMemo(() => {
+    const normalize = (val: string) => {
+      const lower = (val || '').trim().toLowerCase();
+      if (lower.includes('month')) return 'Month-to-month';
+      if (lower.includes('one') || lower.includes('1')) return 'One year';
+      if (lower.includes('two') || lower.includes('2')) return 'Two year';
+      return val || 'Unknown';
+    };
+    return aggregate(customers, c => normalize(c.contractType));
+  }, [customers]);
   const internetData = useMemo(() => aggregate(customers, c => c.internetService === 'No' ? 'No Internet' : c.internetService), [customers]);
   const tenureData = useMemo(() => {
     const buckets = [{ name: '0-12 mos', min: 0, max: 12 }, { name: '13-24 mos', min: 13, max: 24 }, { name: '25-36 mos', min: 25, max: 36 }, { name: '37-48 mos', min: 37, max: 48 }, { name: '49-60 mos', min: 49, max: 60 }, { name: '61+ mos', min: 61, max: 999 }];

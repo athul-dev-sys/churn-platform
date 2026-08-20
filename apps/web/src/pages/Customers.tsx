@@ -25,7 +25,16 @@ export const Customers: React.FC = () => {
   const loadCustomers = async () => {
     setLoading(true); setError(null);
     try {
-      const res = await fetchCustomers(segment || undefined, riskBand || undefined, page, 50);
+      const res = await fetchCustomers(
+        segment || undefined,
+        riskBand || undefined,
+        page,
+        50,
+        contract || undefined,
+        searchTerm || undefined,
+        sortBy,
+        sortOrder
+      );
       setPaginatedData(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to connect to the prediction API.');
@@ -36,25 +45,22 @@ export const Customers: React.FC = () => {
 
   useEffect(() => {
     void loadCustomers();
-  }, [segment, riskBand, page]);
+  }, [segment, riskBand, page, contract, searchTerm, sortBy, sortOrder]);
 
   const customers = paginatedData?.data || [];
 
-  const filtered = useMemo(() => customers.filter(c => {
-    const term = searchTerm.toLowerCase();
-    return (c.customerId.toLowerCase().includes(term) || c.id.toLowerCase().includes(term)) && (!contract || c.contractType === contract);
-  }).sort((a, b) => {
-    const get = (c: Customer) => sortBy === 'score' ? (c.scores?.[0]?.score ?? -1) : sortBy === 'tenure' ? c.tenure : c.monthlyCharges;
-    return sortOrder === 'asc' ? get(a) - get(b) : get(b) - get(a);
-  }), [customers, searchTerm, contract, sortBy, sortOrder]);
-
   const toggleSort = (field: 'score' | 'tenure' | 'charges') => {
+    setPage(1);
     if (sortBy === field) setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
     else { setSortBy(field); setSortOrder('desc'); }
   };
 
+  const updateContract = (val: string) => { setPage(1); setContract(val); };
+  const updateSearch = (val: string) => { setPage(1); setSearchTerm(val); };
+
   const clearFilters = () => {
     setSearchTerm(''); setSegment(''); setRiskBand(''); setContract(''); setPage(1);
+    setSortBy('score'); setSortOrder('desc');
     setSearchParams({});
   };
 
@@ -77,15 +83,15 @@ export const Customers: React.FC = () => {
 
       <section className="glass-card rounded-3xl p-4 sm:p-5">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <label className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search Customer ID..." className="w-full rounded-xl border border-slate-200 bg-white/75 py-2.5 pl-9 pr-3 text-xs text-slate-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" /></label>
+          <label className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input value={searchTerm} onChange={e => updateSearch(e.target.value)} placeholder="Search Customer ID..." className="w-full rounded-xl border border-slate-200 bg-white/75 py-2.5 pl-9 pr-3 text-xs text-slate-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" /></label>
           <Select value={segment} onChange={updateSegment} options={['', 'Enterprise', 'SMB', 'Consumer']} placeholder="All Segments" />
           <Select value={riskBand} onChange={updateRisk} options={['', 'High', 'Medium', 'Low']} placeholder="All Risk Bands" />
-          <Select value={contract} onChange={setContract} options={['', 'Month-to-month', 'One year', 'Two year']} placeholder="All Contracts" />
+          <Select value={contract} onChange={updateContract} options={['', 'Month-to-month', 'One year', 'Two year']} placeholder="All Contracts" />
           <button onClick={clearFilters} className="rounded-xl bg-[#6824df] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#571bc2]">Clear Filters</button>
         </div>
       </section>
 
-      {loading ? <StateCard loading /> : error ? <StateCard error={error} onRetry={() => void loadCustomers()} /> : filtered.length === 0 ? <StateCard empty /> : (
+      {loading ? <StateCard loading /> : error ? <StateCard error={error} onRetry={() => void loadCustomers()} /> : customers.length === 0 ? <StateCard empty /> : (
         <section className="glass-card overflow-hidden rounded-3xl">
           <div className="flex items-center justify-between border-b border-[#eee8df] px-5 py-4 sm:px-6">
             <div>
@@ -125,7 +131,7 @@ export const Customers: React.FC = () => {
             <th className="px-5 py-3 text-[9px] font-bold uppercase tracking-[.14em] text-slate-400">Reason</th>
             <th className="px-5 py-3" />
           </tr></thead><tbody className="divide-y divide-slate-100">
-            {filtered.map(c => { const score = c.scores?.[0]; const band = score?.riskBand; return <tr key={c.id} className="transition hover:bg-emerald-50/30">
+            {customers.map(c => { const score = c.scores?.[0]; const band = score?.riskBand; return <tr key={c.id} className="transition hover:bg-emerald-50/30">
               <td className="px-5 py-4"><Link to={`/customer/${c.customerId}`} className="font-mono text-xs font-bold text-slate-700 hover:text-emerald-700">{c.customerId}</Link></td>
               <td className="px-5 py-4 text-xs text-slate-600">{c.tenure} mo</td>
               <td className="px-5 py-4 text-xs text-slate-600">{c.contractType}</td>

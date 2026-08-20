@@ -14,7 +14,7 @@ import { ModelServiceRequest, ModelServiceResponse } from '../types/modelService
  */
 export async function getCustomers(req: Request, res: Response): Promise<Response> {
   try {
-    const { segment, riskBand, page, limit } = req.query;
+    const { segment, riskBand, page, limit, contract, search, sortBy, sortOrder } = req.query;
 
     if (
       segment !== undefined &&
@@ -55,7 +55,70 @@ export async function getCustomers(req: Request, res: Response): Promise<Respons
       };
     }
 
+    if (contract && typeof contract === 'string' && contract.trim() !== '' && contract.toLowerCase() !== 'all') {
+      const cNorm = contract.trim().toLowerCase();
+      if (cNorm.includes('month')) {
+        whereClause.contractType = { in: ['Month-to-Month', 'Month-to-month', 'Month to Month', 'month-to-month'] };
+      } else if (cNorm.includes('one') || cNorm.includes('1')) {
+        whereClause.contractType = { in: ['One Year', 'One year', '1 Year', 'one year'] };
+      } else if (cNorm.includes('two') || cNorm.includes('2')) {
+        whereClause.contractType = { in: ['Two Year', 'Two year', '2 Year', 'two year'] };
+      } else {
+        whereClause.contractType = { equals: contract.trim(), mode: 'insensitive' };
+      }
+    }
+
+    if (search && typeof search === 'string' && search.trim() !== '') {
+      const term = search.trim();
+      whereClause.OR = [
+        { customerId: { contains: term, mode: 'insensitive' } },
+        { id: { contains: term, mode: 'insensitive' } },
+      ];
+    }
+
     const total = await prisma.customer.count({ where: whereClause });
+
+    const orderDirection: 'asc' | 'desc' = (sortOrder as string)?.toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+    if (sortBy === 'score') {
+      const allMatching = await prisma.customer.findMany({
+        where: whereClause,
+        include: {
+          scores: {
+            orderBy: {
+              scoredAt: 'desc',
+            },
+            take: 1,
+          },
+        },
+      });
+
+      allMatching.sort((a, b) => {
+        const scoreA = a.scores?.[0]?.score ?? -1;
+        const scoreB = b.scores?.[0]?.score ?? -1;
+        return orderDirection === 'asc' ? scoreA - scoreB : scoreB - scoreA;
+      });
+
+      const totalPages = limitNum > 0 ? Math.ceil(allMatching.length / limitNum) : 1;
+      const data = limitNum > 0 ? allMatching.slice((pageNum - 1) * limitNum, pageNum * limitNum) : allMatching;
+
+      return res.json({
+        data,
+        total: allMatching.length,
+        page: pageNum,
+        totalPages,
+        limit: limitNum || allMatching.length,
+      });
+    }
+
+    let orderByClause: any = { customerId: 'asc' };
+    if (sortBy === 'tenure') {
+      orderByClause = { tenure: orderDirection };
+    } else if (sortBy === 'charges') {
+      orderByClause = { monthlyCharges: orderDirection };
+    } else if (sortBy === 'customerId') {
+      orderByClause = { customerId: orderDirection };
+    }
 
     const findOptions: any = {
       where: whereClause,
@@ -67,9 +130,7 @@ export async function getCustomers(req: Request, res: Response): Promise<Respons
           take: 1,
         },
       },
-      orderBy: {
-        customerId: 'asc',
-      },
+      orderBy: orderByClause,
     };
 
     if (limitNum > 0) {

@@ -44,7 +44,11 @@ export async function fetchCustomers(
   segment?: string,
   riskBand?: string,
   page?: number,
-  limit?: number
+  limit?: number,
+  contract?: string,
+  search?: string,
+  sortBy?: string,
+  sortOrder?: string
 ): Promise<PaginatedCustomers> {
   const params = new URLSearchParams();
   if (segment && segment.trim() !== '' && segment.toLowerCase() !== 'all') {
@@ -52,6 +56,18 @@ export async function fetchCustomers(
   }
   if (riskBand && riskBand.trim() !== '' && riskBand.toLowerCase() !== 'all') {
     params.append('riskBand', riskBand);
+  }
+  if (contract && contract.trim() !== '' && contract.toLowerCase() !== 'all') {
+    params.append('contract', contract);
+  }
+  if (search && search.trim() !== '') {
+    params.append('search', search);
+  }
+  if (sortBy && sortBy.trim() !== '') {
+    params.append('sortBy', sortBy);
+  }
+  if (sortOrder && sortOrder.trim() !== '') {
+    params.append('sortOrder', sortOrder);
   }
   if (page) params.append('page', page.toString());
   if (limit) params.append('limit', limit.toString());
