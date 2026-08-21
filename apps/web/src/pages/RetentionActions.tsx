@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Play, RefreshCw, Sparkles } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Play, RefreshCw, Sparkles, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ChurnScore, Customer, fetchCustomers, scoreBatch } from '../lib/api';
+import { ActionModal } from '../components/ActionModal';
 
 const PAGE_SIZE = 15;
 
@@ -14,6 +15,11 @@ export const RetentionActions: React.FC = () => {
   const [batchResult, setBatchResult] = useState<{ processed: number; scores: ChurnScore[] } | null>(null);
   const [batchError, setBatchError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+
+  // Modal State
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalCustomer, setModalCustomer] = useState('');
+  const [modalCampaign, setModalCampaign] = useState('');
 
   const loadData = async () => {
     setLoading(true);
@@ -82,11 +88,24 @@ export const RetentionActions: React.FC = () => {
     }
   };
 
+  const handleLaunchCampaign = (campaignName: string, customerId: string = '') => {
+    setModalCampaign(campaignName);
+    setModalCustomer(customerId || (selectedIds.length > 0 ? selectedIds[0] : ''));
+    setModalOpen(true);
+  };
+
   const startCount = atRisk.length > 0 ? (page - 1) * PAGE_SIZE + 1 : 0;
   const endCount = Math.min(page * PAGE_SIZE, atRisk.length);
 
   return (
     <div className="space-y-6">
+      <ActionModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        defaultCampaign={modalCampaign}
+        defaultCustomer={modalCustomer}
+      />
+
       <header className="border-b border-slate-200/60 pb-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
@@ -126,6 +145,7 @@ export const RetentionActions: React.FC = () => {
               title="Save Month-to-Month Subscribers"
               text="Offer elevated-risk month-to-month customers a transition incentive toward a longer agreement."
               target="Target: tenure < 24 months + Month-to-month"
+              onExecute={() => handleLaunchCampaign('Contract Migration')}
             />
             <Campaign
               tone="rose"
@@ -133,6 +153,7 @@ export const RetentionActions: React.FC = () => {
               title="Fiber High-Charge Loyalty Credit"
               text="Review high-charge Fiber Optic customers and consider a loyalty credit or bundle adjustment."
               target="Target: Fiber optic + monthly charges > $80"
+              onExecute={() => handleLaunchCampaign('Discount Offer')}
             />
             <Campaign
               tone="emerald"
@@ -140,6 +161,7 @@ export const RetentionActions: React.FC = () => {
               title="Paperless Payment Upgrade"
               text="Encourage eligible customers to move from manual payment methods to an automatic payment option."
               target="Target: payment method indicates manual/check payment"
+              onExecute={() => handleLaunchCampaign('Autopay Promotion')}
             />
           </section>
 
@@ -180,10 +202,25 @@ export const RetentionActions: React.FC = () => {
               />
             )}
 
-            <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-[#eee8df] bg-white/55 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-[#eee8df] bg-white/70 p-4 sm:flex-row sm:items-center sm:justify-between shadow-sm">
               <span className="text-xs text-slate-600">
-                Selected customers: <b>{selectedIds.length}</b>
+                Selected customers: <b className="text-[#6421e8] font-bold">{selectedIds.length}</b>
               </span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => selectAllCurrent(true)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Select Page
+                </button>
+                <button
+                  onClick={runBatch}
+                  disabled={selectedIds.length === 0 || batchLoading}
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#6421e8] to-[#7c22de] px-5 py-2 text-xs font-bold text-white shadow-md shadow-purple-200 transition disabled:opacity-40 hover:opacity-95"
+                >
+                  <Zap size={14} /> Run Batch ML Scoring
+                </button>
+              </div>
             </div>
 
             <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200/60">
@@ -287,7 +324,7 @@ export const RetentionActions: React.FC = () => {
   );
 };
 
-function Campaign({ tone, label, title, text, target }: { tone: 'amber' | 'rose' | 'emerald'; label: string; title: string; text: string; target: string }) {
+function Campaign({ tone, label, title, text, target, onExecute }: { tone: 'amber' | 'rose' | 'emerald'; label: string; title: string; text: string; target: string; onExecute?: () => void }) {
   const c = {
     amber: 'border-l-amber-500 bg-amber-50/40 text-amber-700',
     rose: 'border-l-rose-500 bg-rose-50/40 text-rose-700',
@@ -295,7 +332,17 @@ function Campaign({ tone, label, title, text, target }: { tone: 'amber' | 'rose'
   }[tone];
   return (
     <article className={`glass-card rounded-2xl border-l-4 p-5 ${c}`}>
-      <span className="text-[9px] font-bold uppercase tracking-[.14em]">{label}</span>
+      <div className="flex items-center justify-between">
+        <span className="text-[9px] font-bold uppercase tracking-[.14em]">{label}</span>
+        {onExecute && (
+          <button
+            onClick={onExecute}
+            className="rounded-lg bg-white/80 px-2.5 py-1 text-[10px] font-bold text-slate-800 shadow-sm hover:bg-white"
+          >
+            Launch Offer
+          </button>
+        )}
+      </div>
       <h3 className="mt-2 text-sm font-bold text-slate-900">{title}</h3>
       <p className="mt-2 text-xs leading-5 text-slate-500">{text}</p>
       <div className="mt-3 rounded-xl border border-white/80 bg-white/60 p-2.5 text-[10px] font-semibold text-slate-600">{target}</div>

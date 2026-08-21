@@ -15,7 +15,7 @@ export const Customers: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [segment, setSegment] = useState(searchParams.get('segment') || '');
+  const [paymentMethod, setPaymentMethod] = useState(searchParams.get('paymentMethod') || '');
   const [riskBand, setRiskBand] = useState(searchParams.get('riskBand') || '');
   const [contract, setContract] = useState('');
   const [page, setPage] = useState(1);
@@ -26,14 +26,15 @@ export const Customers: React.FC = () => {
     setLoading(true); setError(null);
     try {
       const res = await fetchCustomers(
-        segment || undefined,
+        undefined,
         riskBand || undefined,
         page,
         50,
         contract || undefined,
         searchTerm || undefined,
         sortBy,
-        sortOrder
+        sortOrder,
+        paymentMethod || undefined
       );
       setPaginatedData(res);
     } catch (err) {
@@ -45,7 +46,7 @@ export const Customers: React.FC = () => {
 
   useEffect(() => {
     void loadCustomers();
-  }, [segment, riskBand, page, contract, searchTerm, sortBy, sortOrder]);
+  }, [paymentMethod, riskBand, page, contract, searchTerm, sortBy, sortOrder]);
 
   const customers = paginatedData?.data || [];
 
@@ -59,12 +60,12 @@ export const Customers: React.FC = () => {
   const updateSearch = (val: string) => { setPage(1); setSearchTerm(val); };
 
   const clearFilters = () => {
-    setSearchTerm(''); setSegment(''); setRiskBand(''); setContract(''); setPage(1);
+    setSearchTerm(''); setPaymentMethod(''); setRiskBand(''); setContract(''); setPage(1);
     setSortBy('score'); setSortOrder('desc');
     setSearchParams({});
   };
 
-  const updateSegment = (value: string) => { setPage(1); setSegment(value); setSearchParams(p => { value ? p.set('segment', value) : p.delete('segment'); return p; }); };
+  const updatePaymentMethod = (value: string) => { setPage(1); setPaymentMethod(value); setSearchParams(p => { value ? p.set('paymentMethod', value) : p.delete('paymentMethod'); return p; }); };
   const updateRisk = (value: string) => { setPage(1); setRiskBand(value); setSearchParams(p => { value ? p.set('riskBand', value) : p.delete('riskBand'); return p; }); };
 
   const totalRecords = paginatedData?.total || 0;
@@ -84,7 +85,7 @@ export const Customers: React.FC = () => {
       <section className="glass-card rounded-3xl p-4 sm:p-5">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
           <label className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input value={searchTerm} onChange={e => updateSearch(e.target.value)} placeholder="Search Customer ID..." className="w-full rounded-xl border border-slate-200 bg-white/75 py-2.5 pl-9 pr-3 text-xs text-slate-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" /></label>
-          <Select value={segment} onChange={updateSegment} options={['', 'Enterprise', 'SMB', 'Consumer']} placeholder="All Segments" />
+          <Select value={paymentMethod} onChange={updatePaymentMethod} options={['', 'Electronic check', 'Mailed check', 'Bank transfer', 'Credit card']} placeholder="All Payment Methods" />
           <Select value={riskBand} onChange={updateRisk} options={['', 'High', 'Medium', 'Low']} placeholder="All Risk Bands" />
           <Select value={contract} onChange={updateContract} options={['', 'Month-to-month', 'One year', 'Two year']} placeholder="All Contracts" />
           <button onClick={clearFilters} className="rounded-xl bg-[#6824df] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#571bc2]">Clear Filters</button>

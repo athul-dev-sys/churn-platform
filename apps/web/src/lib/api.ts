@@ -61,7 +61,8 @@ export async function fetchCustomers(
   contract?: string,
   search?: string,
   sortBy?: string,
-  sortOrder?: string
+  sortOrder?: string,
+  paymentMethod?: string
 ): Promise<PaginatedCustomers> {
   const params = new URLSearchParams();
   if (segment && segment.trim() !== '' && segment.toLowerCase() !== 'all') {
@@ -72,6 +73,9 @@ export async function fetchCustomers(
   }
   if (contract && contract.trim() !== '' && contract.toLowerCase() !== 'all') {
     params.append('contract', contract);
+  }
+  if (paymentMethod && paymentMethod.trim() !== '' && paymentMethod.toLowerCase() !== 'all') {
+    params.append('paymentMethod', paymentMethod);
   }
   if (search && search.trim() !== '') {
     params.append('search', search);

@@ -14,19 +14,10 @@ import { ModelServiceRequest, ModelServiceResponse } from '../types/modelService
  */
 export async function getCustomers(req: Request, res: Response): Promise<Response> {
   try {
-    const { segment, riskBand, page, limit, contract, search, sortBy, sortOrder } = req.query;
+    const { segment, riskBand, page, limit, contract, search, sortBy, sortOrder, paymentMethod } = req.query;
 
-    if (
-      segment !== undefined &&
-      typeof segment === 'string' &&
-      segment.trim() !== '' &&
-      segment.toLowerCase() !== 'all'
-    ) {
-      return res.status(400).json({
-        error:
-          'Segment filtering is not supported: the Customer model has no relation to Segment in the current Prisma schema.',
-      });
-    }
+    // Gracefully ignore unsupported segment query parameter without failing
+    // (Segment model is detached in Prisma schema)
 
     let parsedBand: RiskBand | null = null;
     if (
@@ -66,6 +57,10 @@ export async function getCustomers(req: Request, res: Response): Promise<Respons
       } else {
         whereClause.contractType = { equals: contract.trim(), mode: 'insensitive' };
       }
+    }
+
+    if (paymentMethod && typeof paymentMethod === 'string' && paymentMethod.trim() !== '' && paymentMethod.toLowerCase() !== 'all') {
+      whereClause.paymentMethod = { contains: paymentMethod.trim(), mode: 'insensitive' };
     }
 
     if (search && typeof search === 'string' && search.trim() !== '') {

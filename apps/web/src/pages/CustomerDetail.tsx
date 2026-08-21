@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, ArrowRight, Bot, DollarSign, ShieldAlert, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bot, DollarSign, RefreshCw, ShieldAlert, Sparkles, Zap } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { Customer, fetchCustomerById, scoreBatch } from "../lib/api";
+import { ActionModal } from "../components/ActionModal";
 
 const Metric = ({ title, value, detail, icon }: { title: string; value: string; detail: string; icon: React.ReactNode }) => (
   <article className="relative min-h-[160px] overflow-hidden rounded-2xl border border-white bg-[#fffdfa] p-6 shadow-sm">
@@ -12,13 +13,20 @@ const Metric = ({ title, value, detail, icon }: { title: string; value: string; 
   </article>
 );
 
-const Reco = ({ impact, title, text }: { impact: string; title: string; text: string }) => (
-  <article className="rounded-xl bg-white p-5 shadow-sm">
+const Reco = ({ impact, title, text, onApply }: { impact: string; title: string; text: string; onApply?: () => void }) => (
+  <article className="rounded-xl bg-white p-5 shadow-sm border border-slate-100">
     <div className="flex justify-between items-center">
       <span className="rounded bg-[#efe9ff] px-2.5 py-1 text-xs font-bold text-[#5f20e2]">{impact}</span>
-      <ArrowRight size={16} className="text-[#5f20e2]" />
+      {onApply && (
+        <button
+          onClick={onApply}
+          className="inline-flex items-center gap-1 text-xs font-bold text-[#5f20e2] hover:underline"
+        >
+          Apply <ArrowRight size={14} />
+        </button>
+      )}
     </div>
-    <h3 className="mt-4 text-base font-bold">{title}</h3>
+    <h3 className="mt-4 text-base font-bold text-slate-900">{title}</h3>
     <p className="mt-2 text-xs leading-5 text-[#3e3d50]">{text}</p>
   </article>
 );
@@ -29,6 +37,10 @@ export const CustomerDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [scoring, setScoring] = useState(false);
+
+  // Modal State
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalCampaign, setModalCampaign] = useState('Discount Offer');
 
   const loadCustomer = async () => {
     if (!id) return;
@@ -93,6 +105,13 @@ export const CustomerDetail: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_47%_20%,#fffdf9_0,#f6eedc_58%,#f2e4ca_100%)] p-6 sm:p-10">
+      <ActionModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        defaultCustomer={customer.customerId}
+        defaultCampaign={modalCampaign}
+      />
+
       <section className="mx-auto max-w-[1200px]">
         <header className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-center gap-6">
@@ -120,6 +139,17 @@ export const CustomerDetail: React.FC = () => {
                 {customer.contractType} Contract • {customer.internetService} • Paid via {customer.paymentMethod}
               </p>
             </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleScoreCustomer}
+              disabled={scoring}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#6421e8] to-[#7c22de] px-5 py-2.5 text-xs font-bold text-white shadow-md shadow-purple-200 transition hover:opacity-95 disabled:opacity-40"
+            >
+              {scoring ? <RefreshCw size={15} className="animate-spin" /> : <Zap size={15} />}
+              {scoring ? "Scoring Model..." : "Run ML Scoring"}
+            </button>
           </div>
         </header>
 
@@ -194,8 +224,24 @@ export const CustomerDetail: React.FC = () => {
                 <Bot className="text-[#6923e8]" size={20} /> Actionable Playbooks
               </h2>
               <div className="mt-5 space-y-4">
-                <Reco impact="HIGH IMPACT" title="Executive Sync" text="Initiate proactive account review and contract extension terms." />
-                <Reco impact="MEDIUM IMPACT" title="Discount Offer" text="Offer a 10% monthly charge reduction for a 1-year contract lock-in." />
+                <Reco
+                  impact="HIGH IMPACT"
+                  title="Executive Sync"
+                  text="Initiate proactive account review and contract extension terms."
+                  onApply={() => {
+                    setModalCampaign('Executive Sync');
+                    setModalOpen(true);
+                  }}
+                />
+                <Reco
+                  impact="MEDIUM IMPACT"
+                  title="Discount Offer"
+                  text="Offer a 10% monthly charge reduction for a 1-year contract lock-in."
+                  onApply={() => {
+                    setModalCampaign('Discount Offer');
+                    setModalOpen(true);
+                  }}
+                />
               </div>
             </article>
           </aside>
